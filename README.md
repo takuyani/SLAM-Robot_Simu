@@ -47,7 +47,7 @@ http://mergedoc.osdn.jp/
  - __インタープリター名：__  
  ⇒Anaconda Python（任意で構わない）
  - __インタープリター実行可能ファイル：__  
- ⇒[Anacondaのインストール](### Anacondaのインストール)でインストールしたディレクトリに「python.exe」があるのでそれを選択する。デフォルトでは「C:\Program Files\Anaconda3\python.exe」。
+ ⇒[Anacondaのインストール](#Anacondaのインストール)でインストールしたディレクトリに「python.exe」があるのでそれを選択する。デフォルトでは「C:\Program Files\Anaconda3\python.exe」。
 
  ![fig.conf3](https://c1.staticflickr.com/1/591/31954397401_aa4207bc03_z.jpg)
 
