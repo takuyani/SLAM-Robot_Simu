@@ -42,7 +42,7 @@ class Transform(object):
         return local
 
     def local2world(self, origin, local):
-        '''ワールド座標系→ローカル座標系変換
+        '''ローカル座標系→ワールド座標系変換
         引数：
             origin：変換原点位置（ベクトル）
              origin[0, 0]：x座標

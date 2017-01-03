@@ -308,7 +308,8 @@ if __name__ == '__main__':
 
     ekf = ExtendedKalmanFilter(period_ms)
 
-    ani = animation.FuncAnimation(fig, animate, frames=frame_cnt, fargs=(ekf, period_ms), blit=False, interval=period_ms, repeat=False)
+    ani = animation.FuncAnimation(fig, animate, frames=frame_cnt, fargs=(ekf, period_ms), blit=False,
+                                  interval=period_ms, repeat=False)
 
 #    ani.save('Localization_by_ekf.mp4', bitrate=5000)
 
