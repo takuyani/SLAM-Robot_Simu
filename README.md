@@ -70,6 +70,6 @@ https://ffmpeg.zeranoe.com/builds/
 2. ダウンロードされたZipファイルを適当な場所に解凍する。
 
 ### 環境変数の設定
-1. 環境変数に「ffmpeg.exe」が存在するディレクトリを指定します。  
+1. 環境変数"Path"に「ffmpeg.exe」が存在するディレクトリを指定します。  
 （例）
 C:\Apl\ffmpeg-20161230-6993bb4-win64-static\ffmpeg-20161230-6993bb4-win64-static\bin
