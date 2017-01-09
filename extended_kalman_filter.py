@@ -27,36 +27,51 @@ class ExtendedKalmanFilter(object):
         '''
         self.__tf = transform.Transform()
 
-        #---------- 制御定数定義 ----------
+        #---------- 定数定義 ----------
         self.__DT_s = period_ms / 1000  # 更新周期[sec]
+
+        #---------- 状態空間モデルパラメータ定義 ----------
         self.__RADIUS_m = 10.0  # 周回半径[m]
         self.__YAW_RATE_rps = np.deg2rad(10.0)  # 角速度[rad/s]
         self.__VEL_mps = self.__RADIUS_m * self.__YAW_RATE_rps  # 速度[m/s]
 
-        #---------- 観測定数定義 ----------
+        # 状態遷移行列A
+        self.__A = np.array([[1.0, 0.0, 0.0],
+                             [0.0, 1.0, 0.0],
+                             [0.0, 0.0, 1.0]])
+
+        # 制御行列B
+        self.__B = np.array([[self.__VEL_mps, 0.0           , 0.0                ],
+                             [0.0           , self.__VEL_mps, 0.0                ],
+                             [0.0           , 0.0           , self.__YAW_RATE_rps]])
+
+        # 観測行列C
         self.__C = np.array([[1.0, 0.0, 0.0],  # 観測行列
                              [0.0, 1.0, 0.0]])
 
-        #---------- 制御パラメータ初期化 ----------
-        # 制御入力u(k)
-        self.__u = np.array([[self.__VEL_mps],
-                             [self.__YAW_RATE_rps]])
+        #---------- 雑音ベクトルの共分散行列定義 ----------
+        # システム雑音
+        cov_sys_px = 0.5  # 位置x[m]の標準偏差
+        cov_sys_py = 0.5  # 位置y[m]の標準偏差
+        cov_sys_yaw = 0.5  # 角度yaw[deg]の標準偏差
+        self.__Q = np.diag([cov_sys_px, cov_sys_py, np.deg2rad(cov_sys_yaw)]) ** 2
 
-        #---------- ノイズ定義 ----------
-        # システムノイズ
-        cov_vel = 3.0  # 速度v[m/s]の標準偏差
-        cov_yaw = 900.0  # 角速度ω[deg/s]の標準偏差
-        self.__Q = np.diag([cov_vel, np.deg2rad(cov_yaw)]) ** 2
-
-        # 観測ノイズ
-        cov_px = 1.0  # 位置x[m]の標準偏差
-        cov_py = 1.0  # 位置y[m]の標準偏差
-        self.__R = np.diag([cov_px, cov_py]) ** 2
+        # 観測雑音
+        cov_obs_px = 2.0  # 位置x[m]の標準偏差
+        cov_obs_py = 2.0  # 位置y[m]の標準偏差
+        self.__R = np.diag([cov_obs_px, cov_obs_py]) ** 2
 
         #---------- シミュレーションパラメータ ----------
-        cov_pxa = cov_px + 1.0  # 位置x[m]の標準偏差
-        cov_pya = cov_py + 0.0  # 位置y[m]の標準偏差
-        self.__R_act = np.diag([cov_pxa, cov_pya]) ** 2
+        # システム雑音
+        cov_sys_pxa  = cov_sys_px + 0.0  # 位置x[m]の標準偏差
+        cov_sys_pya  = cov_sys_py + 0.0  # 位置y[m]の標準偏差
+        cov_sys_yawa = cov_sys_yaw + 0.0 # 角度yaw[deg]の標準偏差
+        self.__Q_act = np.diag([cov_sys_pxa, cov_sys_pya, np.deg2rad(cov_sys_yawa)]) ** 2
+
+        # 観測雑音
+        cov_obs_pxa = cov_obs_px + 0.0  # 位置x[m]の標準偏差
+        cov_obs_pya = cov_obs_py + 0.0  # 位置y[m]の標準偏差
+        self.__R_act = np.diag([cov_obs_pxa, cov_obs_pya]) ** 2
 
         #---------- 初期状態 ----------
         # 位置
@@ -82,30 +97,30 @@ class ExtendedKalmanFilter(object):
 
         '''
         # ---------- Ground Truth ----------
-        self.__x_true = self.__f(self.__x_true, self.__u)
+        self.__x_true = self.__f(self.__x_true)
+
+        # ---------- Observation ----------
+        w = np.random.multivariate_normal([0.0, 0.0], self.__R_act, 1).T
+        z = self.__observation(self.__x_true, w)
 
         # ---------- Dead Reckoning ----------
         # 状態方程式：x(k+1) = A * x(k) + B * u(k) + v [v~N(0,Q)]
-        v = np.random.multivariate_normal([0.0, 0.0], self.__Q, 1).T
-        u_act = self.__u + v
-        self.__x_dr = self.__f(self.__x_dr, u_act)
+        v = np.random.multivariate_normal([0.0, 0.0, 0.0], self.__Q_act, 1).T
+        self.__x_dr = self.__f(self.__x_dr) + v
 
         # ========== Extended Kalman Filter(EKF) ==========
         # ---------- [Step1]Prediction ----------
         # 事前状態推定値
-        x_hat_m = self.__f(self.__x_hat, self.__u)
+        x_hat_m = self.__f(self.__x_hat)
 
         # 事前誤差共分散行列
-        jF = self.__jacobF(self.__x_hat, self.__u)
-        B = self.__calc_B(self.__x_hat)
-        NoiseCov = B @ self.__Q @ B.T
-        P_m = (jF @ self.__P @ jF.T) + NoiseCov
+        jF = self.__jacobF(self.__x_hat, self.__VEL_mps)
+        P_m = (jF @ self.__P @ jF.T) + self.__Q
 
         # ---------- [Step2]Update/Filtering ----------
-        z = self.__observation(self.__x_true, self.__C, self.__R_act)
         jH = self.__jacobH()
         e = z - (jH @ x_hat_m)
-        G = self.__calc_kalman_gain(P_m, self.__C, self.__R)
+        G = self.__calc_kalman_gain(P_m, self.__R)
 
         # 状態推定値
         self.__x_hat = x_hat_m + (G @ e)
@@ -117,81 +132,62 @@ class ExtendedKalmanFilter(object):
 
         return self.__x_true, self.__x_dr, z, x_hat_m, self.__P
 
-    def __observation(self, x, C, R):
+    def __observation(self, x, w):
         '''観測値y(k)算出
             観測方程式：y(k) = C * x(k) + w [w~N(R,Q)]
         引数：
             x：状態x(k)
-            C：観測行列
-            R：観測雑音の共分散行列
+            w：観測雑音ベクトル[w~N(R,Q)]
         返り値：
             y：観測値y(k)
         '''
-        w = np.random.multivariate_normal([0.0, 0.0], R, 1).T
         x_l = np.array([[0.0],
                         [0.0],
                         [np.deg2rad(90.0)]])
-        y_l = (C @ x_l) + w
+        y_l = (self.__C @ x_l) + w
         y_w = self.__tf.local2world(x, y_l.T)
         return y_w.T
 
-    def __calc_kalman_gain(self, P_m, C, R):
+    def __calc_kalman_gain(self, P_m, R):
         '''カルマンゲイン算出
         引数：
             P_m: 事前誤差共分散行列Pm(k)
-            C：観測行列
             R：観測雑音の共分散行列
         返り値：
             G：カルマンゲインG(k)
         '''
-        S = (C @ P_m @ C.T) + R
-        G = (P_m @ C.T) @ np.linalg.inv(S)
+        S = (self.__C @ P_m @ self.__C.T) + R
+        G = (P_m @ self.__C.T) @ np.linalg.inv(S)
         return G
 
-    def __f(self, x, u):
+    def __f(self, x):
         '''状態x(k+1)算出
             状態方程式：x(k+1) = A * x(k) + B * u(k)
         引数：
             x：状態x(k)
-            u：制御入力u(k)
         返り値：
             x_next：状態x(k+1)
-        '''
-        A = np.array([[1.0, 0.0, 0.0],
-                      [0.0, 1.0, 0.0],
-                      [0.0, 0.0, 1.0]])
-        B = self.__calc_B(x)
-
-        x_next = (A @ x) + (B @ u)
-        x_next[2, 0] = self.__limit_angle(x_next[2, 0])
-
-        return x_next
-
-    def __calc_B(self, x):
-        '''システムパラメータB(k)算出
-        引数：
-            x：状態x(k)
-        返り値：
-            B：システムパラメータB(k)
         '''
         yaw = x[2, 0]
         a = self.__DT_s * np.cos(yaw)
         b = self.__DT_s * np.sin(yaw)
-        B = np.array([[a  , 0.0        ],
-                      [b  , 0.0        ],
-                      [0.0, self.__DT_s]])
-        return B
+        u = np.array([[a],
+                      [b],
+                      [self.__DT_s]])
 
-    def __jacobF(self, xHat, u):
+        x_next = (self.__A @ x) + (self.__B @ u)
+        x_next[2, 0] = self.__limit_angle(x_next[2, 0])
+
+        return x_next
+
+    def __jacobF(self, xHat, v):
         '''動作モデルのヤコビアン
         引数：
             xHat：状態推定値x^(k)
-            u：制御入力u(k)
-            P：誤差共分散行列P(k)
+            v：制御行列の速度成分
         返り値：
             jF：動作モデルのヤコビアンjF(k)
         '''
-        v = u[0, 0]
         yaw = xHat[2, 0]
         a = -self.__DT_s * v * np.sin(yaw)
         b = self.__DT_s * v * np.cos(yaw)
