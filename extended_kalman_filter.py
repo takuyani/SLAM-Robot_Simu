@@ -191,9 +191,9 @@ class ExtendedKalmanFilter(object):
         yaw = xHat[2, 0]
         a = -self.__DT_s * v * np.sin(yaw)
         b = self.__DT_s * v * np.cos(yaw)
-        jF = np.array([[0.0, 0.0, a  ],
-                       [0.0, 0.0, b  ],
-                       [0.0, 0.0, 0.0]])
+        jF = np.array([[1.0, 0.0, a  ],
+                       [0.0, 1.0, b  ],
+                       [0.0, 0.0, 1.0]])
         return jF
 
     def __jacobH(self):
