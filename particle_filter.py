@@ -33,17 +33,17 @@ class ParticleFilter(object):
 
         #---------- 定数定義 ----------
         self.__DT_s = period_ms / 1000  # 更新周期[sec]
-        self.__NP = 10  # パーティクル数
+        self.__NP = 50  # パーティクル数
         self.__NP_RECIP = 1 / self.__NP # パーティクル数の逆数
-#        self.__NTH = self.__NP / 32.0    # リサンプリングを実施する有効パーティクル数
-        self.__NTH = self.__NP + 1    # リサンプリングを実施する有効パーティクル数
+        self.__NTH = 2    # リサンプリングを実施する有効パーティクル数
+#        self.__NTH = self.__NP + 1    # リサンプリングを実施する有効パーティクル数
 
         #---------- ランドマーク ----------
-        self.__LM = np.array([[  5.0,  5.0],
-                              [  0.0, 15.0],
-                              [ -3.0,  4.0],
-                              [-15.0,  0.0],
-                              [  0.0,  0.0]])
+        self.__LM = np.array([[ 5.0,  5.0],
+                              [ 2.0, -3.0],
+                              [-3.0,  4.0],
+                              [-5.0, -1.0],
+                              [ 0.0,  0.0]])
 
         #---------- 状態空間モデルパラメータ定義 ----------
         self.__RADIUS_m = 10.0  # 周回半径[m]
@@ -66,9 +66,9 @@ class ParticleFilter(object):
 
         #---------- 雑音ベクトルの共分散行列定義 ----------
         # システム雑音
-        cov_sys_px = 0.1  # 位置x[m]の標準偏差
-        cov_sys_py = 0.1  # 位置y[m]の標準偏差
-        cov_sys_yaw = 0.0  # 角度yaw[deg]の標準偏差
+        cov_sys_px = 0.01  # 位置x[m]の標準偏差
+        cov_sys_py = 0.01  # 位置y[m]の標準偏差
+        cov_sys_yaw = 2.0  # 角度yaw[deg]の標準偏差
         self.__Q = np.diag([cov_sys_px, cov_sys_py, np.deg2rad(cov_sys_yaw)]) ** 2
 
         # 観測雑音
@@ -331,16 +331,25 @@ def animate(i, pf, period_ms):
     ax2 = plt.subplot2grid((1, 2), (0, 1))
 
     # ランドマークの描写
-    ax1.scatter(lm[:,0], lm[:,1], s=600, c="yellow", marker="*", alpha=0.5, linewidths="2", edgecolors="orange")
-    ax2.scatter(lm[:,0], lm[:,1], s=600, c="yellow", marker="*", alpha=0.5, linewidths="2", edgecolors="orange")
+    ax1.scatter(lm[:,0], lm[:,1], s=600, c="yellow", marker="*", alpha=0.5, linewidths="2", edgecolors="orange", label='Land Mark')
+    ax2.scatter(lm[:,0], lm[:,1], s=600, c="yellow", marker="*", alpha=0.5, linewidths="2", edgecolors="orange", label='Land Mark')
+
+    # 線分の描写
+    p_est = x_est[0:2, 0].T
+    for i in range(lm.shape[0]):
+        l = lm[i]
+        x = np.array([p_est[0], lm[i][0]])
+        y = np.array([p_est[1], lm[i][1]])
+        ax1.plot(x, y, '--', c=col_z)
+        ax2.plot(x, y, '--', c=col_z)
 
     # 状態x(真値)の描写
     P1.append(x_true)
     a, b, c = np.array(np.concatenate(P1, axis=1))
-    ax1.plot(a, b, c=col_x_true, linewidth=1.0, linestyle='-', label='Est')
+    ax1.plot(a, b, c=col_x_true, linewidth=1.0, linestyle='-', label='Ground Truth')
     ax1.scatter(x_true[0], x_true[1], c=col_x_true, marker='o', alpha=0.5)
     ax1.quiver(x_true[0], x_true[1], np.cos(x_true[2]), np.sin(x_true[2]), color = 'red', width  = 0.003)
-    ax2.plot(a, b, c=col_x_true, linewidth=1.0, linestyle='-', label='Est')
+    ax2.plot(a, b, c=col_x_true, linewidth=1.0, linestyle='-', label='Ground Truth')
     ax2.scatter(x_true[0], x_true[1], c=col_x_true, marker='o', alpha=0.5)
     ax2.quiver(x_true[0], x_true[1], np.cos(x_true[2]), np.sin(x_true[2]), color = 'red', width  = 0.003)
 
@@ -362,10 +371,10 @@ def animate(i, pf, period_ms):
 #    ax1.scatter(x_pre[0], x_pre[1], c=col_x_hat, marker='o', alpha=0.5)
     P4.append(x_est)
     a, b, c = np.array(np.concatenate(P4, axis=1))
-    ax1.plot(a, b, c=col_x_hat, linewidth=1.0, linestyle='-', label='Est')
+    ax1.plot(a, b, c=col_x_hat, linewidth=1.0, linestyle='-', label='Estimation')
     ax1.scatter(px[0], px[1], c=col_x_hat, marker='o', alpha=0.5)
     ax1.quiver(px[0], px[1], np.cos(px[2]), np.sin(px[2]), width  = 0.003)
-    ax2.plot(a, b, c=col_x_hat, linewidth=1.0, linestyle='-', label='Est')
+    ax2.plot(a, b, c=col_x_hat, linewidth=1.0, linestyle='-', label='Estimation')
     ax2.scatter(px[0], px[1], c=col_x_hat, marker='o', alpha=0.5)
     ax2.quiver(px[0], px[1], np.cos(px[2]), np.sin(px[2]), width  = 0.003)
 #    for i in range(px.shape[1]):
@@ -401,18 +410,19 @@ def animate(i, pf, period_ms):
 
 if __name__ == '__main__':
 
-    period_ms = 100  # 更新周期[msec]
+    period_ms = 50  # 更新周期[msec]
     frame_cnt = int(36 * 1000 / period_ms)
 
     # 描画
-    fig = plt.figure(figsize=(12, 9))
+#    fig = plt.figure(figsize=(12, 9))
+    fig = plt.figure(figsize=(18, 9))
 
     pf = ParticleFilter(period_ms)
 
     ani = animation.FuncAnimation(fig, animate, frames=frame_cnt, fargs=(pf, period_ms), blit=False,
                                   interval=period_ms, repeat=False)
 
-#    ani.save('Localization_by_pf.mp4', bitrate=5000)
+    ani.save('Localization_by_pf.mp4', bitrate=5000)
 
     plt.show()
 
