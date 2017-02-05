@@ -16,6 +16,7 @@ from mylib import transform
 from mylib import error_ellipse
 from statsmodels.regression.tests.test_quantile_regression import idx
 from numba.typing.npydecl import NdArange
+from cmath import sin
 
 class ParticleFilter(object):
     '''パーティクルフィルタ'''
@@ -32,10 +33,10 @@ class ParticleFilter(object):
 
         #---------- 定数定義 ----------
         self.__DT_s = period_ms / 1000  # 更新周期[sec]
-        self.__NP = 50  # パーティクル数
+        self.__NP = 10  # パーティクル数
         self.__NP_RECIP = 1 / self.__NP # パーティクル数の逆数
 #        self.__NTH = self.__NP / 32.0    # リサンプリングを実施する有効パーティクル数
-        self.__NTH = 5.0    # リサンプリングを実施する有効パーティクル数
+        self.__NTH = self.__NP + 1    # リサンプリングを実施する有効パーティクル数
 
         #---------- ランドマーク ----------
         self.__LM = np.array([[  5.0,  5.0],
@@ -65,9 +66,9 @@ class ParticleFilter(object):
 
         #---------- 雑音ベクトルの共分散行列定義 ----------
         # システム雑音
-        cov_sys_px = 0.01  # 位置x[m]の標準偏差
-        cov_sys_py = 0.01  # 位置y[m]の標準偏差
-        cov_sys_yaw = 1.0  # 角度yaw[deg]の標準偏差
+        cov_sys_px = 0.1  # 位置x[m]の標準偏差
+        cov_sys_py = 0.1  # 位置y[m]の標準偏差
+        cov_sys_yaw = 0.0  # 角度yaw[deg]の標準偏差
         self.__Q = np.diag([cov_sys_px, cov_sys_py, np.deg2rad(cov_sys_yaw)]) ** 2
 
         # 観測雑音
@@ -120,7 +121,7 @@ class ParticleFilter(object):
         # ---------- Observation ----------
         z_l = self.__tf.world2local(self.__x_true, self.__LM)
         w = np.random.multivariate_normal([0.0, 0.0], self.__R_act, z_l.shape[0])
-        z_l += w
+#        z_l += w
 #        z = self.__observation(self.__x_true, w)
 
         # ---------- Dead Reckoning ----------
@@ -129,18 +130,14 @@ class ParticleFilter(object):
         self.__x_dr = self.__f(self.__x_dr) + v
 
         # ========== Particle Filter(PF) ==========
-        # リサンプリング
-        px_resamp, pw_resamp = self.__resampling(self.__px, self.__pw)
-
         # 予測
-        px_est = self.__predict(px_resamp)
+        px_est = self.__predict(self.__px)
 
         # 尤度の計算
-        pw_new = self.__likelihood(px_est, pw_resamp, z_l)
+        pw_new = self.__likelihood(px_est, self.__pw, z_l)
 
-        # 更新
-        self.__px = px_est
-        self.__pw = pw_new
+        # リサンプリング
+        self.__px, self.__pw = self.__resampling(px_est, pw_new)
 
         max_val = np.max(pw_new)    # 重み最大値
         max_idx = np.argmax(pw_new) # 重み最大値のインデックス
@@ -148,7 +145,7 @@ class ParticleFilter(object):
 
         print('WghtMaxVal = {0}, WghtMaxIdx = {1}'.format(max_val, max_idx))
 
-        return self.__LM, self.__x_true, x_est, px_est, pw_new
+        return self.__LM, self.__x_true, x_est, px_est, pw_new[0], self.__Q
 
     def __predict(self, px):
         '''パーティクルフィルタメイン処理
@@ -161,7 +158,7 @@ class ParticleFilter(object):
             x_hat_m：事前状態推定値x^m(k)
 
         '''
-        v = np.random.multivariate_normal([0.0, 0.0, 0.0], self.__Q_act, self.__NP).T
+        v = np.random.multivariate_normal([0.0, 0.0, 0.0], self.__Q, self.__NP).T
         px_est = self.__f(px) + v
 
         return px_est
@@ -181,7 +178,6 @@ class ParticleFilter(object):
             dy = diff_pz[:,1]
             bnlm = mlab.bivariate_normal( dx, dy, sigma_xx, sigma_yy, 0.0, 0.0, sigma_xy )
             bn[i] = bnlm.prod()
-
 
         pw_update = pw * bn
         # 尤度の正規化
@@ -285,6 +281,7 @@ time_s = 0
 confidence_interval = 99.0
 
 ee = error_ellipse.ErrorEllipse(confidence_interval)
+tf = transform.Transform()
 
 def animate(i, pf, period_ms):
     global P1, P2, P3, P4
@@ -296,20 +293,56 @@ def animate(i, pf, period_ms):
 
     time_s += period_ms / 1000
 
-    lm, x_true, x_est, px, pw = pf.main_pf()
+    lm, x_true, x_est, px, pw, Q = pf.main_pf()
+
+#    a = [
+#       ['Tim',     55, 46 ],
+#       ['Jack',    55, 70 ],
+#       ['Mathhew', 23, 80 ],
+#    ]
+#
+#    xt_l = tf.world2local(x_true, lm)
+#    for i in range(px.shape[1]):
+#        xest_l = tf.world2local(px[i], lm)
+#        dpx = np.array([xest_l[0] - xt_l[0],
+#                        xest_l[1] - xt_l[1]])
+#        norm = np.linalg.norm(dpx, axis=0)
+#
+#    b = []
+#
+#    dpx = np.array([xest_l[0] - xt_l[0],
+#                    xest_l[1] - xt_l[1]])
+#    norm = np.linalg.norm(dpx, axis=0)
+#    for i in range(px.shape[1]):
+#        aa = i, norm[i], pw[i]
+#        b.append(aa)
+
+#    b = .append(px[0, :], px[1, :]
+
+#    c = [ px[0, :], px[1, :] ]
+
+#    for i in range(px.shape[1]):
+#        tbl = [
+#               ]
 
     plt.cla()
 
-    ax1 = plt.subplot2grid((1, 1), (0, 0))
+    ax1 = plt.subplot2grid((1, 2), (0, 0))
+    ax2 = plt.subplot2grid((1, 2), (0, 1))
 
     # ランドマークの描写
-#    ax1.scatter(lm[:,0], lm[:,1], s=600, c="yellow", marker="*", alpha=0.5, linewidths="2", edgecolors="orange")
+    ax1.scatter(lm[:,0], lm[:,1], s=600, c="yellow", marker="*", alpha=0.5, linewidths="2", edgecolors="orange")
+    ax2.scatter(lm[:,0], lm[:,1], s=600, c="yellow", marker="*", alpha=0.5, linewidths="2", edgecolors="orange")
 
     # 状態x(真値)の描写
     P1.append(x_true)
     a, b, c = np.array(np.concatenate(P1, axis=1))
     ax1.plot(a, b, c=col_x_true, linewidth=1.0, linestyle='-', label='Est')
     ax1.scatter(x_true[0], x_true[1], c=col_x_true, marker='o', alpha=0.5)
+    ax1.quiver(x_true[0], x_true[1], np.cos(x_true[2]), np.sin(x_true[2]), color = 'red', width  = 0.003)
+    ax2.plot(a, b, c=col_x_true, linewidth=1.0, linestyle='-', label='Est')
+    ax2.scatter(x_true[0], x_true[1], c=col_x_true, marker='o', alpha=0.5)
+    ax2.quiver(x_true[0], x_true[1], np.cos(x_true[2]), np.sin(x_true[2]), color = 'red', width  = 0.003)
 
     # 状態x(デットレコニング)の描写
 #    P2.append(x_dr)
@@ -331,10 +364,17 @@ def animate(i, pf, period_ms):
     a, b, c = np.array(np.concatenate(P4, axis=1))
     ax1.plot(a, b, c=col_x_hat, linewidth=1.0, linestyle='-', label='Est')
     ax1.scatter(px[0], px[1], c=col_x_hat, marker='o', alpha=0.5)
+    ax1.quiver(px[0], px[1], np.cos(px[2]), np.sin(px[2]), width  = 0.003)
+    ax2.plot(a, b, c=col_x_hat, linewidth=1.0, linestyle='-', label='Est')
+    ax2.scatter(px[0], px[1], c=col_x_hat, marker='o', alpha=0.5)
+    ax2.quiver(px[0], px[1], np.cos(px[2]), np.sin(px[2]), width  = 0.003)
+#    for i in range(px.shape[1]):
+#        l = '[' + str(i+1) + ']' + "%.3f" % pw[i]
+#        ax2.annotate(l, xy = (px[0][i], px[1][i]), size = 15)
 
     # 誤差楕円生成
-#    Pxy = P[0:2, 0:2]
-#    x, y, ang_rad = ee.calc_error_ellipse(Pxy)
+    Qxy = Q[0:2, 0:2]
+    ee_l,ee_y, ee_ang_rad = ee.calc_error_ellipse(Qxy)
 #    e = patches.Ellipse((x_pre[0, 0], x_pre[1, 0]), x, y, angle=np.rad2deg(ang_rad), linewidth=2, alpha=0.2,
 #                         facecolor='yellow', edgecolor='black', label='Error Ellipse: %.2f[%%]' %
 #                         confidence_interval)
@@ -348,6 +388,15 @@ def animate(i, pf, period_ms):
     ax1.axis('equal')
     ax1.grid()
     ax1.legend(fontsize=10)
+
+    ax2.set_xlabel('x [m]')
+    ax2.set_ylabel('y [m]')
+    ax2.set_title('Localization by PF')
+    ee_l *= 1.5
+    ax2.set_xlim(x_est[0][0] - ee_l, x_est[0][0] + ee_l)
+    ax2.set_ylim(x_est[1][0] - ee_l, x_est[1][0] + ee_l)
+    ax2.grid()
+    ax2.legend(fontsize=10)
 
 
 if __name__ == '__main__':
