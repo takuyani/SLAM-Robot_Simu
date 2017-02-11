@@ -54,6 +54,18 @@ class ErrorEllipse(object):
         y = np.sqrt(val[idxmin] * self.__chi) * 2
         return l, y, ang_rad
 
+    def calc_chi(self, p, sigma):
+        '''カイの二乗値算出
+        引数：
+            p：上側累積パーセント点(2自由)
+        返り値：
+            l：長軸の長さ
+        '''
+        chi = self.chi_squared_distribution(p)
+        val, vec = np.linalg.eigh(sigma)
+        idxmax = np.argmax(val)
+        l = np.sqrt(val[idxmax] * chi) * 2
+        return l
 
 if __name__ == '__main__':
     # データ数

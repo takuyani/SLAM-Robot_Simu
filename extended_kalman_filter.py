@@ -13,6 +13,7 @@ from matplotlib import animation, patches
 import matplotlib.pyplot as plt
 from mylib import transform
 from mylib import error_ellipse
+from mylib import limit
 
 class ExtendedKalmanFilter(object):
     '''拡張カルマンフィルタ'''
@@ -51,14 +52,14 @@ class ExtendedKalmanFilter(object):
 
         #---------- 雑音ベクトルの共分散行列定義 ----------
         # システム雑音
-        cov_sys_px = 0.5  # 位置x[m]の標準偏差
-        cov_sys_py = 0.5  # 位置y[m]の標準偏差
-        cov_sys_yaw = 0.5  # 角度yaw[deg]の標準偏差
+        cov_sys_px = 0.1  # 位置x[m]の標準偏差
+        cov_sys_py = 0.1  # 位置y[m]の標準偏差
+        cov_sys_yaw = 0.1  # 角度yaw[deg]の標準偏差
         self.__Q = np.diag([cov_sys_px, cov_sys_py, np.deg2rad(cov_sys_yaw)]) ** 2
 
         # 観測雑音
-        cov_obs_px = 2.0  # 位置x[m]の標準偏差
-        cov_obs_py = 2.0  # 位置y[m]の標準偏差
+        cov_obs_px = 1.0  # 位置x[m]の標準偏差
+        cov_obs_py = 1.0  # 位置y[m]の標準偏差
         self.__R = np.diag([cov_obs_px, cov_obs_py]) ** 2
 
         #---------- シミュレーションパラメータ ----------
@@ -83,7 +84,7 @@ class ExtendedKalmanFilter(object):
                                   [np.deg2rad(yaw0)]])
         self.__x_dr = self.__x_true
         self.__x_hat = self.__x_true  # 状態推定値
-        self.__P = np.diag([0.01, 0.01, np.deg2rad(90.0)]) ** 2  # 誤差共分散行列
+        self.__P = np.diag([0.01, 0.01, np.deg2rad(30.0)]) ** 2  # 誤差共分散行列
 
     def main_ekf(self):
         '''拡張カルマンフィルタメイン処理
@@ -124,7 +125,7 @@ class ExtendedKalmanFilter(object):
 
         # 状態推定値
         self.__x_hat = x_hat_m + (G @ e)
-        self.__x_hat[2, 0] = self.__limit_angle(self.__x_hat[2, 0])
+        self.__x_hat[2, 0] = limit.limit_angle(self.__x_hat[2, 0])
 
         # 事後誤差共分散行列
         I = np.identity(self.__x_hat.shape[0])
@@ -176,7 +177,7 @@ class ExtendedKalmanFilter(object):
                       [self.__DT_s]])
 
         x_next = (self.__A @ x) + (self.__B @ u)
-        x_next[2, 0] = self.__limit_angle(x_next[2, 0])
+        x_next[2, 0] = limit.limit_angle(x_next[2, 0])
 
         return x_next
 
@@ -207,29 +208,11 @@ class ExtendedKalmanFilter(object):
                        [0.0, 1.0, 0.0]])
         return jH
 
-    def __limit_angle(self, angle_in):
-        '''角度範囲補正処理
-            角度を-π～πの範囲に補正する
-        引数：
-            angle_in：補正前角度[rad]
-        返り値：
-            angle_out：補正後角度[rad]
-        '''
-        angle_out = np.absolute(angle_in)
-        if angle_out > np.pi:
-            angle_out -= np.pi * 2
-
-        if angle_in < 0:
-            angle_out *= -1
-
-        return angle_out
-
-
 
 P1 = []
 P2 = []
 P3 = []
-P4 = []
+P2 = []
 time_s = 0
 
 # 誤差楕円の信頼区間[%]
@@ -238,7 +221,7 @@ confidence_interval = 99.0
 ee = error_ellipse.ErrorEllipse(confidence_interval)
 
 def animate(i, ekf, period_ms):
-    global P1, P2, P3, P4
+    global P1, P2, P3, P2
     global time_s
     col_x_true = 'red'
 #    col_x_dr = 'yellow'
@@ -254,8 +237,8 @@ def animate(i, ekf, period_ms):
     ax1 = plt.subplot2grid((1, 1), (0, 0))
 
     # 状態x(真値)の描写
-    P1.append(x_true)
-    a, b, c = np.array(np.concatenate(P1, axis=1))
+    P1.append(x_true[0:2, :])
+    a, b = np.array(np.concatenate(P1, axis=1))
     ax1.plot(a, b, c=col_x_true, linewidth=1.0, linestyle='-', label='Ground Truth')
     ax1.scatter(x_true[0], x_true[1], c=col_x_true, marker='o', alpha=0.5)
 
@@ -271,8 +254,8 @@ def animate(i, ekf, period_ms):
     ax1.scatter(a, b, c=col_z, marker='o', alpha=0.5, label='Observation')
 
     # 状態x(推定値)の描写
-    P4.append(x_pre)
-    a, b, c = np.array(np.concatenate(P4, axis=1))
+    P2.append(x_pre[0:2, :])
+    a, b = np.array(np.concatenate(P2, axis=1))
     ax1.plot(a, b, c=col_x_hat, linewidth=1.0, linestyle='-', label='Predicted')
     ax1.scatter(x_pre[0], x_pre[1], c=col_x_hat, marker='o', alpha=0.5)
 
@@ -289,7 +272,7 @@ def animate(i, ekf, period_ms):
     ax1.set_xlabel('x [m]')
     ax1.set_ylabel('y [m]')
     ax1.set_title('Localization by EKF')
-    ax1.axis('equal')
+    ax1.axis('equal', adjustable='box')
     ax1.grid()
     ax1.legend(fontsize=10)
 
