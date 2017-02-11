@@ -24,7 +24,6 @@ class ExtendedKalmanFilter(object):
             period_ms：更新周期[msec]
         返り値：
             なし
-
         '''
         self.__tf = transform.Transform()
 
@@ -95,7 +94,6 @@ class ExtendedKalmanFilter(object):
             x_dr：状態(k)[デットレコニング]
             z：観測値z(k)
             x_hat_m：事前状態推定値x^m(k)
-
         '''
         # ---------- Ground Truth ----------
         self.__x_true = self.__f(self.__x_true)

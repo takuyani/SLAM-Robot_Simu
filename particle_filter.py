@@ -25,15 +25,14 @@ class ParticleFilter(object):
             period_ms：更新周期[msec]
         返り値：
             なし
-
         '''
         self.__tf = transform.Transform()
 
         #---------- 定数定義 ----------
         self.__DT_s = period_ms / 1000  # 更新周期[sec]
-        self.__NP = 100  # パーティクル数
+        self.__NP = 1000  # パーティクル数
         self.__NP_RECIP = 1 / self.__NP  # パーティクル数の逆数
-        self.__NTH = self.__NP / 2.0    # リサンプリングを実施する有効パーティクル数
+        self.__NTH = self.__NP / 100.0  # リサンプリングを実施する有効パーティクル数
 
         #---------- ランドマーク ----------
         self.__LM = np.array([[ 5.0, 5.0],
@@ -59,14 +58,14 @@ class ParticleFilter(object):
 
         #---------- 雑音ベクトルの共分散行列定義 ----------
         # システム雑音
-        cov_sys_px = 0.1  # 位置x[m]の標準偏差
-        cov_sys_py = 0.1  # 位置y[m]の標準偏差
-        cov_sys_yaw = 3.0  # 角度yaw[deg]の標準偏差
+        cov_sys_px = 0.03  # 位置x[m]の標準偏差
+        cov_sys_py = 0.03  # 位置y[m]の標準偏差
+        cov_sys_yaw = 2.0  # 角度yaw[deg]の標準偏差
         self.__Q = np.diag([cov_sys_px, cov_sys_py, np.deg2rad(cov_sys_yaw)]) ** 2
 
         # 観測雑音
-        cov_obs_px = 0.01  # 位置x[m]の標準偏差
-        cov_obs_py = 0.01  # 位置y[m]の標準偏差
+        cov_obs_px = 0.3  # 位置x[m]の標準偏差
+        cov_obs_py = 0.3  # 位置y[m]の標準偏差
         self.__R = np.diag([cov_obs_px, cov_obs_py]) ** 2
 
         #---------- 初期状態 ----------
@@ -88,11 +87,13 @@ class ParticleFilter(object):
         引数：
             なし
         返り値：
+            LM：ランドマーク
             x_true：状態(k)[真値]
-            x_dr：状態(k)[デットレコニング]
-            z：観測値z(k)
-            x_hat_m：事前状態推定値x^m(k)
-
+            x_est：状態(k)[推定値]
+            self.__px：状態パーティクル(k)
+            self.__Q：システム雑音
+            max_idx：尤度最大値のインデックス
+            max_val：尤度最大値
         '''
         # ---------- Ground Truth ----------
         self.__x_true = self.__f(self.__x_true)
@@ -112,7 +113,7 @@ class ParticleFilter(object):
 
         max_val = np.max(self.__pw)  # 重み最大値
         max_idx = np.argmax(self.__pw)  # 重み最大値のインデックス
-        x_est = np.array(self.__px[:, max_idx], ndmin = 2).T  # 推定値x
+        x_est = np.array(self.__px[:, max_idx], ndmin=2).T  # 推定値x
 
         return self.__LM, self.__x_true, x_est, self.__px, self.__Q, max_idx, max_val
 
@@ -205,7 +206,7 @@ class ParticleFilter(object):
             px：次回演算用パーティクルの状態
             pw：次回演算用パーティクルの尤度
         '''
-        n_eff = np.reciprocal(pw @ pw.T)
+        n_eff = float(np.reciprocal(pw @ pw.T))
         if n_eff < self.__NTH:
             pw_cum = np.cumsum(pw)
             base_id = np.arange(0.0, 1.0, self.__NP_RECIP)
@@ -259,46 +260,46 @@ def animate(i, pf, period_ms):
     ax2 = plt.subplot2grid((1, 2), (0, 1))
 
     # ランドマークの描写
-    ax1.scatter(lm[:, 0], lm[:, 1], s = 100, c = "yellow", marker = "*", alpha = 0.5, linewidths = "2",
-                edgecolors = "orange", label = 'Land Mark')
-    ax2.scatter(lm[:, 0], lm[:, 1], s = 100, c = "yellow", marker = "*", alpha = 0.5, linewidths = "2",
-                edgecolors = "orange")
+    ax1.scatter(lm[:, 0], lm[:, 1], s=100, c="yellow", marker="*", alpha=0.5, linewidths="2",
+                edgecolors="orange", label='Land Mark')
+    ax2.scatter(lm[:, 0], lm[:, 1], s=100, c="yellow", marker="*", alpha=0.5, linewidths="2",
+                edgecolors="orange")
 
     # 線分の描写
     p_est = x_est[0:2, 0].T
     for i in range(lm.shape[0]):
         x = np.array([p_est[0], lm[i][0]])
         y = np.array([p_est[1], lm[i][1]])
-        ax1.plot(x, y, '--', c = 'green')
-        ax2.plot(x, y, '--', c = 'green')
+        ax1.plot(x, y, '--', c='green')
+        ax2.plot(x, y, '--', c='green')
 
     # 状態x(真値)の描写
     P1.append(x_true[0:2, :])
-    a, b = np.array(np.concatenate(P1, axis = 1))
-    ax1.plot(a, b, c = col_x_true, linewidth = 1.0, linestyle = '-', label = 'Ground Truth')
-    ax1.scatter(x_true[0], x_true[1], c = col_x_true, marker = 'o', alpha = 0.5)
-    ax1.quiver(x_true[0], x_true[1], np.cos(x_true[2]), np.sin(x_true[2]), color = 'red', width = 0.003)
-    ax2.plot(a, b, c = col_x_true, linewidth = 1.0, linestyle = '-')
-    ax2.scatter(x_true[0], x_true[1], c = col_x_true, marker = 'o', alpha = 0.5)
-    ax2.quiver(x_true[0], x_true[1], np.cos(x_true[2]), np.sin(x_true[2]), color = 'red', width = 0.003)
+    a, b = np.array(np.concatenate(P1, axis=1))
+    ax1.plot(a, b, c=col_x_true, linewidth=1.0, linestyle='-', label='Ground Truth')
+    ax1.scatter(x_true[0], x_true[1], c=col_x_true, marker='o', alpha=0.5)
+    ax2.plot(a, b, c=col_x_true, linewidth=1.0, linestyle='-')
+    ax2.scatter(x_true[0], x_true[1], c=col_x_true, marker='o', alpha=0.5)
+    ax2.quiver(x_true[0], x_true[1], np.cos(x_true[2]), np.sin(x_true[2]), color='red', units='inches', scale=6.0,
+               width=0.01, headwidth=0.0, headlength=0.0, headaxislength=0.0)
 
     # 状態x(推定値)の描写
     P2.append(x_est[0:2, :])
-    a, b = np.array(np.concatenate(P2, axis = 1))
-    ax1.plot(a, b, c = col_x_est, linewidth = 1.0, linestyle = '-', label = 'Estimation')
-    ax1.scatter(px[0], px[1], c = col_x_est, marker = 'o', alpha = 0.5)
-    ax1.quiver(px[0], px[1], np.cos(px[2]), np.sin(px[2]), width = 0.003)
-    ax2.plot(a, b, c = col_x_est, linewidth = 1.0, linestyle = '-')
-    ax2.scatter(px[0], px[1], c = col_x_est, marker = 'o', alpha = 0.5)
-    ax2.quiver(px[0], px[1], np.cos(px[2]), np.sin(px[2]), width = 0.003)
+    a, b = np.array(np.concatenate(P2, axis=1))
+    ax1.plot(a, b, c=col_x_est, linewidth=1.0, linestyle='-', label='Estimation')
+    ax1.scatter(px[0], px[1], c=col_x_est, marker='o', alpha=0.5)
+    ax2.plot(a, b, c=col_x_est, linewidth=1.0, linestyle='-')
+    ax2.scatter(px[0], px[1], c=col_x_est, marker='o', alpha=0.5)
+    ax2.quiver(px[0], px[1], np.cos(px[2]), np.sin(px[2]), color='blue', units='inches', scale=6.0, width=0.01,
+               headwidth=0.0, headlength=0.0, headaxislength=0.0)
 
     # ラベル描写
     txt = '[Index]:{0}\n[Weight]:{1:.3f}'.format(w_idx, w_val)
-    ax2.annotate(txt, xy = (x_est[0, 0], x_est[1, 0]), xycoords = 'data',
-                xytext = (100, 200), textcoords = 'offset points',
-                bbox = dict(boxstyle = 'round,pad=0.5', fc = (1.0, 0.7, 0.7)),
-                arrowprops = dict(arrowstyle = "->", color = 'pink',
-                                connectionstyle = 'arc3,rad=0'),
+    ax2.annotate(txt, xy=(x_est[0, 0], x_est[1, 0]), xycoords='data',
+                xytext=(100, 200), textcoords='offset points',
+                bbox=dict(boxstyle='round,pad=0.5', fc=(1.0, 0.7, 0.7)),
+                arrowprops=dict(arrowstyle="->", color='black',
+                                connectionstyle='arc3,rad=0'),
                 )
 
     ax1.set_xlabel('x [m]')
@@ -306,16 +307,18 @@ def animate(i, pf, period_ms):
     ax1.set_title('Localization by PF')
     ax1.axis('equal', adjustable='box')
     ax1.grid()
-    ax1.legend(fontsize = 10)
+    ax1.legend(fontsize=10)
 
     ax2.set_xlabel('x [m]')
     ax2.set_ylabel('y [m]')
     ax2.set_title('Zoom')
-    ee_l = ee.calc_chi(confidence_interval, Q[0:2, 0:2]) * 1.5
+    ee_l = ee.calc_chi(confidence_interval, Q[0:2, 0:2]) * 3
     ax2.set_xlim(x_est[0][0] - ee_l, x_est[0][0] + ee_l)
     ax2.set_ylim(x_est[1][0] - ee_l, x_est[1][0] + ee_l)
     ax2.grid()
-    ax2.legend(fontsize = 10)
+    ax2.legend(fontsize=10)
+
+    print('time:{0:.3f}[s]'.format(time_s))
 
 
 if __name__ == '__main__':
@@ -324,14 +327,14 @@ if __name__ == '__main__':
     frame_cnt = int(36 * 1000 / period_ms)
 
     # 描画
-    fig = plt.figure(figsize = (18, 9))
+    fig = plt.figure(figsize=(18, 9))
 
     pf = ParticleFilter(period_ms)
 
-    ani = animation.FuncAnimation(fig, animate, frames = frame_cnt, fargs = (pf, period_ms), blit = False,
-                                  interval = period_ms, repeat = False)
+    ani = animation.FuncAnimation(fig, animate, frames=frame_cnt, fargs=(pf, period_ms), blit=False,
+                                  interval=period_ms, repeat=False)
 
-#    ani.save('Localization_by_pf.mp4', bitrate=5000)
+    ani.save('Localization_by_pf.mp4', bitrate=6000)
 
     plt.show()
 
