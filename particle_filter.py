@@ -10,7 +10,7 @@
 import numpy as np
 import scipy as sp
 from numpy import matlib as matlib
-from matplotlib import animation, mlab, patches
+from matplotlib import animation, mlab
 import matplotlib.pyplot as plt
 from mylib import transform
 from mylib import error_ellipse
@@ -33,8 +33,7 @@ class ParticleFilter(object):
         self.__DT_s = period_ms / 1000  # 更新周期[sec]
         self.__NP = 100  # パーティクル数
         self.__NP_RECIP = 1 / self.__NP  # パーティクル数の逆数
-        self.__NTH = 2    # リサンプリングを実施する有効パーティクル数
-#        self.__NTH = self.__NP + 1  # リサンプリングを実施する有効パーティクル数
+        self.__NTH = self.__NP / 2.0    # リサンプリングを実施する有効パーティクル数
 
         #---------- ランドマーク ----------
         self.__LM = np.array([[ 5.0, 5.0],
@@ -60,9 +59,9 @@ class ParticleFilter(object):
 
         #---------- 雑音ベクトルの共分散行列定義 ----------
         # システム雑音
-        cov_sys_px = 0.01  # 位置x[m]の標準偏差
-        cov_sys_py = 0.01  # 位置y[m]の標準偏差
-        cov_sys_yaw = 1.0  # 角度yaw[deg]の標準偏差
+        cov_sys_px = 0.1  # 位置x[m]の標準偏差
+        cov_sys_py = 0.1  # 位置y[m]の標準偏差
+        cov_sys_yaw = 3.0  # 角度yaw[deg]の標準偏差
         self.__Q = np.diag([cov_sys_px, cov_sys_py, np.deg2rad(cov_sys_yaw)]) ** 2
 
         # 観測雑音
@@ -99,25 +98,23 @@ class ParticleFilter(object):
         self.__x_true = self.__f(self.__x_true)
 
         # ========== Particle Filter(PF) ==========
+        # リサンプリング
+        self.__px, self.__pw = self.__resampling(self.__px, self.__pw)
+
         # 予測
-        px_est = self.__predict(self.__px)
+        self.__px = self.__predict(self.__px)
 
         # 観測
         z_l = self.__observation(self.__x_true)
 
         # 尤度の計算
-        pw_new = self.__likelihood(px_est, self.__pw, z_l)
+        self.__pw = self.__likelihood(self.__px, self.__pw, z_l)
 
-        # リサンプリング
-        self.__px, self.__pw = self.__resampling(px_est, pw_new)
+        max_val = np.max(self.__pw)  # 重み最大値
+        max_idx = np.argmax(self.__pw)  # 重み最大値のインデックス
+        x_est = np.array(self.__px[:, max_idx], ndmin = 2).T  # 推定値x
 
-        max_val = np.max(pw_new)  # 重み最大値
-        max_idx = np.argmax(pw_new)  # 重み最大値のインデックス
-        x_est = np.array(px_est[:, max_idx], ndmin = 2).T  # 推定値x
-
-        print('WghtMaxVal = {0:.3f}, WghtMaxIdx = {1}'.format(max_val, max_idx))
-
-        return self.__LM, self.__x_true, x_est, px_est, self.__Q, max_idx, max_val
+        return self.__LM, self.__x_true, x_est, self.__px, self.__Q, max_idx, max_val
 
     def __f(self, x):
         '''状態x(k+1)算出
