@@ -273,6 +273,12 @@ def animate(i, pf, period_ms):
         ax1.plot(x, y, '--', c='green')
         ax2.plot(x, y, '--', c='green')
 
+    # 状態pxの描写
+    ax1.scatter(px[0], px[1], c='cyan', marker='o', alpha=0.5)
+    ax2.scatter(px[0], px[1], c='cyan', marker='o', alpha=0.5)
+    ax2.quiver(px[0], px[1], np.cos(px[2]), np.sin(px[2]), color='cyan', units='inches', scale=6.0, width=0.01,
+               headwidth=0.0, headlength=0.0, headaxislength=0.0)
+
     # 状態x(真値)の描写
     P1.append(x_true[0:2, :])
     a, b = np.array(np.concatenate(P1, axis=1))
@@ -287,16 +293,16 @@ def animate(i, pf, period_ms):
     P2.append(x_est[0:2, :])
     a, b = np.array(np.concatenate(P2, axis=1))
     ax1.plot(a, b, c=col_x_est, linewidth=1.0, linestyle='-', label='Estimation')
-    ax1.scatter(px[0], px[1], c=col_x_est, marker='o', alpha=0.5)
+    ax1.scatter(x_est[0], x_est[1], c=col_x_est, marker='o', alpha=0.5)
     ax2.plot(a, b, c=col_x_est, linewidth=1.0, linestyle='-')
-    ax2.scatter(px[0], px[1], c=col_x_est, marker='o', alpha=0.5)
-    ax2.quiver(px[0], px[1], np.cos(px[2]), np.sin(px[2]), color='blue', units='inches', scale=6.0, width=0.01,
-               headwidth=0.0, headlength=0.0, headaxislength=0.0)
+    ax2.scatter(x_est[0], x_est[1], c=col_x_est, marker='o', alpha=0.5)
+    ax2.quiver(x_est[0], x_est[1], np.cos(x_est[2]), np.sin(x_est[2]), color=col_x_est, units='inches', scale=6.0,
+               width=0.01, headwidth=0.0, headlength=0.0, headaxislength=0.0)
 
     # ラベル描写
-    txt = '[Index]:{0}\n[Weight]:{1:.3f}'.format(w_idx, w_val)
+    txt = 'Maximuim Likelihood Estimate:\n[Index]:{0}\n[Weight]:{1:.3f}'.format(w_idx, w_val)
     ax2.annotate(txt, xy=(x_est[0, 0], x_est[1, 0]), xycoords='data',
-                xytext=(100, 200), textcoords='offset points',
+                xytext=(0.55, 0.9), textcoords='axes fraction',
                 bbox=dict(boxstyle='round,pad=0.5', fc=(1.0, 0.7, 0.7)),
                 arrowprops=dict(arrowstyle="->", color='black',
                                 connectionstyle='arc3,rad=0'),
@@ -313,8 +319,8 @@ def animate(i, pf, period_ms):
     ax2.set_ylabel('y [m]')
     ax2.set_title('Zoom')
     ee_l = ee.calc_chi(confidence_interval, Q[0:2, 0:2]) * 3
-    ax2.set_xlim(x_est[0][0] - ee_l, x_est[0][0] + ee_l)
-    ax2.set_ylim(x_est[1][0] - ee_l, x_est[1][0] + ee_l)
+    ax2.set_xlim(x_true[0][0] - ee_l, x_true[0][0] + ee_l)
+    ax2.set_ylim(x_true[1][0] - ee_l, x_true[1][0] + ee_l)
     ax2.grid()
     ax2.legend(fontsize=10)
 
@@ -334,7 +340,7 @@ if __name__ == '__main__':
     ani = animation.FuncAnimation(fig, animate, frames=frame_cnt, fargs=(pf, period_ms), blit=False,
                                   interval=period_ms, repeat=False)
 
-    ani.save('Localization_by_pf.mp4', bitrate=6000)
+    # ani.save('Localization_by_pf.mp4', bitrate=6000)
 
     plt.show()
 
