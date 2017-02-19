@@ -32,9 +32,12 @@ class ParticleFilter(object):
         self.__DT_s = period_ms / 1000  # 更新周期[sec]
         self.__NP = 1000  # パーティクル数
         self.__NP_RECIP = 1 / self.__NP  # パーティクル数の逆数
-        self.__NTH = self.__NP / 100.0  # リサンプリングを実施する有効パーティクル数
+        self.__ESS_TH = self.__NP / 100.0  # 有効サンプルサイズ(ESS)閾値
 
         #---------- ランドマーク ----------
+        '''
+        LM(j) = [j番目LMのX座標, j番目LMのY座標]
+        '''
         self.__LM = np.array([[ 5.0, 5.0],
                               [ 2.0, -3.0],
                               [-3.0, 4.0],
@@ -198,7 +201,7 @@ class ParticleFilter(object):
 
     def __resampling(self, px, pw):
         '''リサンプリング処理
-            有効なパーティクル数が閾値を下回った場合、リサンプリングが実行される。
+            有効サンプルサイズ(ESS)が閾値を下回った場合、リサンプリングが実行される。
         引数：
             px：パーティクルの状態
             pw：パーティクルの尤度
@@ -206,8 +209,8 @@ class ParticleFilter(object):
             px：次回演算用パーティクルの状態
             pw：次回演算用パーティクルの尤度
         '''
-        n_eff = float(np.reciprocal(pw @ pw.T))
-        if n_eff < self.__NTH:
+        ess = float(np.reciprocal(pw @ pw.T))
+        if ess < self.__ESS_TH:
             pw_cum = np.cumsum(pw)
             base_id = np.arange(0.0, 1.0, self.__NP_RECIP)
             ofs = np.random.rand() * self.__NP_RECIP  # 初回位置オフセット
