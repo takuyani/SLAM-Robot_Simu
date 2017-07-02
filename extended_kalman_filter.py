@@ -8,10 +8,9 @@
 #==============================================================================
 
 import numpy as np
-import scipy as sp
 from matplotlib import animation, patches
 import matplotlib.pyplot as plt
-from mylib import transform
+from mylib import transform as tf
 from mylib import error_ellipse
 from mylib import limit
 
@@ -25,7 +24,6 @@ class ExtendedKalmanFilter(object):
         返り値：
             なし
         '''
-        self.__tf = transform.Transform()
 
         #---------- 定数定義 ----------
         self.__DT_s = period_ms / 1000  # 更新周期[sec]
@@ -144,7 +142,7 @@ class ExtendedKalmanFilter(object):
                         [0.0],
                         [np.deg2rad(90.0)]])
         y_l = (self.__C @ x_l) + w
-        y_w = self.__tf.local2world(x, y_l.T)
+        y_w = tf.local2world(x, y_l.T)
         return y_w.T
 
     def __calc_kalman_gain(self, P_m, R):

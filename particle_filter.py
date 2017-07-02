@@ -8,11 +8,10 @@
 #==============================================================================
 
 import numpy as np
-import scipy as sp
 from numpy import matlib as matlib
 from matplotlib import animation, mlab
 import matplotlib.pyplot as plt
-from mylib import transform
+from mylib import transform as tf
 from mylib import error_ellipse
 from mylib import limit
 
@@ -26,7 +25,6 @@ class ParticleFilter(object):
         返り値：
             なし
         '''
-        self.__tf = transform.Transform()
 
         #---------- 定数定義 ----------
         self.__DT_s = period_ms / 1000  # 更新周期[sec]
@@ -150,7 +148,7 @@ class ParticleFilter(object):
         返り値：
             z_l：ローカル座標系で観測されたLandMark
         '''
-        z_l = self.__tf.world2local(x_true, self.__LM)
+        z_l = tf.world2local(x_true, self.__LM)
         w = np.random.multivariate_normal([0.0, 0.0], self.__R, z_l.shape[0])
         z_l += w
         return z_l
@@ -186,7 +184,7 @@ class ParticleFilter(object):
         bn = np.zeros(self.__NP)
         for i in range(self.__NP):
             px = np.array([px_est[:, i]]).T
-            pz_l = self.__tf.world2local(px, self.__LM)
+            pz_l = tf.world2local(px, self.__LM)
             diff_pz = pz_l - z_l
             dx = diff_pz[:, 0]
             dy = diff_pz[:, 1]
