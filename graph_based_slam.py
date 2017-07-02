@@ -12,7 +12,6 @@ import scipy as sp
 from numpy import matlib as matlib
 from matplotlib import animation, mlab
 import matplotlib.pyplot as plt
-from mylib import transform
 from mylib import error_ellipse
 from mylib import limit
 from mylib import transform as tf
@@ -60,15 +59,21 @@ class Sensor(object):
                aLm[n, 0]：x座標
                aLm[n, 1]：y座標
                n:要素数
+        返り値：
+           isInc ：包含判定結果
+               isInc[n]：
+                   True:包含されている
+                   False:包含なし
+               n:要素数
         """
         lmLo = tf.world2local(aPose, aLm)
 
-        normLm = np.linalg.norm(lmLo, axis = 1)      # ノルム計算
-        radLm = np.arctan2(lmLo[:, 1], lmLo[:, 0])   # 角度計算
+        normLm = np.linalg.norm(lmLo, axis = 1)  # ノルム計算
+        radLm = np.arctan2(lmLo[:, 1], lmLo[:, 0])  # 角度計算
 
         upperRad = tf.BASE_ANG + self.__mScanAngle_rad
         lowerRad = tf.BASE_ANG - self.__mScanAngle_rad
-        isInc = [ True if (normLm[i]<=self.__mScanRange_m and (lowerRad <= radLm[i] and radLm[i]<=upperRad)) else False for i in range(lmLo.shape[0])]
+        isInc = [ True if (normLm[i] <= self.__mScanRange_m and (lowerRad <= radLm[i] and radLm[i] <= upperRad)) else False for i in range(lmLo.shape[0])]
 
         return isInc
 
@@ -81,7 +86,6 @@ class Sensor(object):
                aPose[0, 0]：x座標[m]
                aPose[1, 0]：y座標[m]
                aPose[2, 0]：方角(rad)
-            aDt：演算周期[sec]
         """
         world = tf.local2world(aPose, self.__local.T)
         aAx.plot(world.T[0], world.T[1], c = aColor, linewidth = 1.0, linestyle = '-')
@@ -156,6 +160,9 @@ class Robot(object):
 
 time_s = 0
 P1 = []
+RADIUS_m = 10.0  # 周回半径[m]
+OMEGA_rps = np.deg2rad(10.0)  # 角速度[rad/s]
+VEL_mps = RADIUS_m * OMEGA_rps  # 速度[m/s]
 
 def graph_based_slam(i, aPeriod_ms, aRobot):
     """"Graph-based SLAM処理
@@ -166,6 +173,9 @@ def graph_based_slam(i, aPeriod_ms, aRobot):
     """
     global time_s
     global P1
+    global RADIUS_m
+    global OMEGA_rps
+    global VEL_mps
 
     #---------- ランドマーク ----------
     """
@@ -177,24 +187,18 @@ def graph_based_slam(i, aPeriod_ms, aRobot):
                    [-5.0, -1.0],
                    [ 0.0, 0.0]])
 
-    RADIUS_m = 10.0  # 周回半径[m]
-
-    OMEGA_rps = np.deg2rad(10.0)  # 角速度[rad/s]
-    VEL_mps = RADIUS_m * OMEGA_rps  # 速度[m/s]
-
     col_x_true = 'red'
     time_s += aPeriod_ms / 1000
 
     aRobot.motionModel(VEL_mps, OMEGA_rps)
     x = aRobot.getPose()
-
     isSns = aRobot.judgeInclusion(LM)
     actLM = np.array([ LM[i] for i in range(len(isSns))  if isSns[i] == True  ])
 
     plt.cla()
 
     # サブプロットを追加
-    ax1 = plt.subplot2grid((1, 1), (0, 0), aspect='equal', adjustable='box-forced')
+    ax1 = plt.subplot2grid((1, 1), (0, 0), aspect = 'equal', adjustable = 'box-forced')
 
     # ランドマークの描写
     ax1.scatter(LM[:, 0], LM[:, 1], s = 100, c = "yellow", marker = "*", alpha = 0.5, linewidths = "2",
