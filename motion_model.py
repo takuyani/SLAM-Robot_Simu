@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #==============================================================================
-# brief        Sample
+# brief        MotionModel
 #
 # author       Takuya Niibori
 # attention    none
@@ -11,8 +11,8 @@ import numpy as np
 from mylib import limit
 import matplotlib.pyplot as plt
 
-class Sample(object):
-    """サンプリングclass"""
+class MotionModel(object):
+    """動作モデルclass"""
 
     def __init__(self, dt, a1, a2, a3, a4, a5, a6):
         """コンストラクタ
@@ -21,33 +21,31 @@ class Sample(object):
         返り値：
             なし
         """
-        self.__Dt = dt
-        self.__Noise = (a1, a2, a3, a4, a5, a6)
+        self.__mDt = dt
+        self.__mNoise = (a1, a2, a3, a4, a5, a6)
 
 
-    def sampleMotionModelVelocity(self, aPose, aCtr):
-        """速度動作モデルのサンプリング
-            状態方程式：x(k+1) = A * x(k) + B * u(k)
+    def moveWithNoise(self, aPose, aV, aW):
+        """動作モデル（ノイズ有り）
         引数：
-            aPose：姿勢(x, y, θ)
-            aCtr：制御(ν, ω)
+            aPose：姿勢（x, y, θ）
+            aV：速度ν[m/s]
+            aW：角速度ω[rad/s]
         返り値：
-            samp1：サンプリング後の姿勢(x, y, θ)
+            newPose：動作後の姿勢（x, y, θ）
         """
-        vel = aCtr[0, 0]
-        omg = aCtr[1, 0]
-        velSq = vel ** 2
-        omgSq = omg ** 2
+        velSq = aV ** 2
+        omgSq = aW ** 2
 
-        velSigma = (self.__Noise[0] * velSq) + (self.__Noise[1] * omgSq)
-        omgSigma = (self.__Noise[2] * velSq) + (self.__Noise[3] * omgSq)
-        gamSigma = (self.__Noise[4] * velSq) + (self.__Noise[5] * omgSq)
-        velHat = vel + np.random.normal(0.0, velSigma ** 2)
-        omgHat = omg + np.random.normal(0.0, omgSigma ** 2)
+        velSigma = (self.__mNoise[0] * velSq) + (self.__mNoise[1] * omgSq)
+        omgSigma = (self.__mNoise[2] * velSq) + (self.__mNoise[3] * omgSq)
+        gamSigma = (self.__mNoise[4] * velSq) + (self.__mNoise[5] * omgSq)
+        velHat = aV + np.random.normal(0.0, velSigma ** 2)
+        omgHat = aW + np.random.normal(0.0, omgSigma ** 2)
         gamHat = np.random.normal(0.0, gamSigma ** 2)
 
         a = velHat / omgHat
-        b = omgHat * self.__Dt
+        b = omgHat * self.__mDt
 
         px = aPose[0, 0]
         py = aPose[1, 0]
@@ -55,15 +53,38 @@ class Sample(object):
 
         pxs = px - (a * np.sin(pt)) + (a * np.sin(pt + b))
         pys = py + (a * np.cos(pt)) - (a * np.cos(pt + b))
-        pts = pt + (omgHat + gamHat) * self.__Dt
+        pts = pt + (omgHat + gamHat) * self.__mDt
         pts = limit.limit_angle(pts)
 
-        samp1 = np.array([[pxs],
-                         [pys],
-                         [pts]])
+        newPose = np.array([[pxs],
+                            [pys],
+                            [pts]])
 
-        return samp1
+        return newPose
 
+    def moveWithoutNoise(self, aPose, aV, aW):
+        """動作モデル（ノイズ無し）
+        引数：
+            aPose：姿勢（x, y, θ）
+            aV：速度ν[m/s]
+            aW：角速度ω[rad/s]
+        返り値：
+            newPose：動作後の姿勢（x, y, θ）
+        """
+        a = aV / aW
+        b = limit.limit_angle(aW * self.__mDt)
+        yaw = aPose[2, 0]
+        yaw_add = limit.limit_angle(yaw + b)
+
+        px = aPose[0, 0] + a * (-np.sin(yaw) + np.sin(yaw_add))
+        py = aPose[1, 0] + a * (np.cos(yaw) - np.cos(yaw_add))
+        pt = yaw_add
+
+        newPose = np.array([[px],
+                            [py],
+                            [pt]])
+
+        return newPose
 
 
 if __name__ == '__main__':
@@ -80,25 +101,21 @@ if __name__ == '__main__':
                      [py0],
                      [np.deg2rad(yaw0)]])
 
-    Ctr = np.array([[VEL_mps],
-                    [YAW_RATE_rps]])
-
-
     fig = plt.figure(figsize=(12, 9))
     ax = plt.subplot2grid((1, 1), (0, 0))
 
     a1 = [0.01, 0.01, 0.1, 0.1, 0.01, 0.01]
-    samp1 = Sample(1.0, a1[0], a1[1], a1[2], a1[3], a1[4], a1[5])
+    samp1 = MotionModel(1.0, a1[0], a1[1], a1[2], a1[3], a1[4], a1[5])
 
     a2 = [0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
-    samp2 = Sample(1.0, a2[0], a2[1], a2[2], a2[3], a2[4], a2[5])
+    samp2 = MotionModel(1.0, a2[0], a2[1], a2[2], a2[3], a2[4], a2[5])
 
     P1 = []
     P2 = []
     for i in range(500):
-        SampPose = samp1.sampleMotionModelVelocity(Pose, Ctr)
+        SampPose = samp1.moveWithNoise(Pose, VEL_mps, YAW_RATE_rps)
         P1.append(SampPose[0:2, :])
-        SampPose = samp2.sampleMotionModelVelocity(Pose, Ctr)
+        SampPose = samp2.moveWithNoise(Pose, VEL_mps, YAW_RATE_rps)
         P2.append(SampPose[0:2, :])
 
     a, b = np.array(np.concatenate(P1, axis=1))

@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from mylib import error_ellipse
 from mylib import limit
 from mylib import transform as tf
-import sample as sm
+import motion_model as mm
 
 class ScanSensor(object):
     """スキャンセンサclass"""
@@ -102,14 +102,14 @@ class Robot(object):
         """
 
         self.__mScnSnsr = ScanSensor(aScanRng, aScanAng, aLandMarks)
-        self.__mSample = sm.Sample(aDt, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01)
+        self.__mMvMdl = mm.MotionModel(aDt, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01)
 
         #---------- 制御周期 ----------
         self.__mDt = aDt
 
         #---------- 姿勢 ----------
-        self.__mPosesAct = [aPose]  # 姿勢（真値）
-        self.__mPosesGss = [aPose]  # 姿勢（推定値）
+        self.__mPosesActu = [aPose]  # 姿勢（真値）
+        self.__mPosesTrue = [aPose]  # 姿勢（推定値）
 
 
     def getPose(self):
@@ -120,61 +120,32 @@ class Robot(object):
             x：姿勢
 
         """
-        return self.__mPosesAct[-1]
+        return self.__mPosesActu[-1]
 
     def move(self, aV, aW):
 
-        ctr = np.array([[aV],
-                        [aW]])
+        poseActu = self.__mMvMdl.moveWithNoise(self.__mPosesActu[-1], aV, aW)
+        poseTrue = self.__mMvMdl.moveWithoutNoise(self.__mPosesActu[-1], aV, aW)
 
-        actPose = self.__mSample.sampleMotionModelVelocity(self.__mPosesAct[-1], ctr)
-        gssPose = self.__motionModel(aV, aW)
+        self.__mPosesActu.append(poseActu)
+        self.__mPosesTrue.append(poseTrue)
 
-        self.__mPosesAct.append(actPose)
-        self.__mPosesGss.append(gssPose)
-
-        self.__mScnSnsr.judgeInclusion(actPose)
-
-
-
-
-    def __motionModel(self, aV, aW):
-        """"動作処理
-        引数：
-            aV：速度ν[m/s]
-            aW：角速度ω[rad/s]
-        返り値：
-        """
-        a = aV / aW
-        b = limit.limit_angle(aW * self.__mDt)
-        yaw = self.__mPosesAct[-1][2, 0]
-        yaw_add = limit.limit_angle(yaw + b)
-
-        px = self.__mPosesAct[-1][0, 0] + a * (-np.sin(yaw) + np.sin(yaw_add))
-        py = self.__mPosesAct[-1][1, 0] + a * (np.cos(yaw) - np.cos(yaw_add))
-        pt = yaw_add
-
-        newPose = np.array([[px],
-                            [py],
-                            [pt]])
-
-        return newPose
-
+        self.__mScnSnsr.judgeInclusion(poseActu)
 
     def draw(self, aAx, aColor):
-        self.__mScnSnsr.draw(aAx, "green", self.__mPosesAct[-1])
+        self.__mScnSnsr.draw(aAx, "green", self.__mPosesActu[-1])
 
-        x = self.__mPosesAct[-1][0, 0]
-        y = self.__mPosesAct[-1][1, 0]
+        x = self.__mPosesActu[-1][0, 0]
+        y = self.__mPosesActu[-1][1, 0]
         # 矢印（ベクトル）の成分
-        u = np.cos(self.__mPosesAct[-1][2, 0])
-        v = np.sin(self.__mPosesAct[-1][2, 0])
+        u = np.cos(self.__mPosesActu[-1][2, 0])
+        v = np.sin(self.__mPosesActu[-1][2, 0])
         # 矢印描写
         aAx.quiver(x, y, u, v, color = aColor, angles = "xy", scale_units = "xy", scale = 1)
 
         # 軌跡描写
-        pxa = [e[0, 0] for e in self.__mPosesAct]
-        pya = [e[1, 0] for e in self.__mPosesAct]
+        pxa = [e[0, 0] for e in self.__mPosesActu]
+        pya = [e[1, 0] for e in self.__mPosesActu]
         aAx.plot(pxa, pya, c = "red", linewidth = 1.0, linestyle = "-", label = "Ground Truth")
 
 
