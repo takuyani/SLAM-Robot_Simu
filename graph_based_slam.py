@@ -102,7 +102,7 @@ class Robot(object):
         """
 
         self.__mScnSnsr = ScanSensor(aScanRng, aScanAng, aLandMarks)
-        self.__mMvMdl = mm.MotionModel(aDt, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01)
+        self.__mMvMdl = mm.MotionModel(aDt, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)
 
         #---------- 制御周期 ----------
         self.__mDt = aDt
@@ -125,18 +125,23 @@ class Robot(object):
     def move(self, aV, aW):
 
         poseActu = self.__mMvMdl.moveWithNoise(self.__mPosesActu[-1], aV, aW)
-        poseTrue = self.__mMvMdl.moveWithoutNoise(self.__mPosesActu[-1], aV, aW)
+        poseTrue = self.__mMvMdl.moveWithoutNoise(self.__mPosesTrue[-1], aV, aW)
 
         self.__mPosesActu.append(poseActu)
         self.__mPosesTrue.append(poseTrue)
 
         self.__mScnSnsr.judgeInclusion(poseActu)
 
-    def draw(self, aAx, aColor):
+    def draw(self, aAx):
         self.__mScnSnsr.draw(aAx, "green", self.__mPosesActu[-1])
 
-        x = self.__mPosesActu[-1][0, 0]
-        y = self.__mPosesActu[-1][1, 0]
+        self.__drawPoses(aAx, "red", "Ground Truth", self.__mPosesTrue)
+        self.__drawPoses(aAx, "blue", "Actual", self.__mPosesActu)
+
+
+    def __drawPoses(self, aAx, aColor, aLabel, aPoses):
+        x = aPoses[-1][0, 0]
+        y = aPoses[-1][1, 0]
         # 矢印（ベクトル）の成分
         u = np.cos(self.__mPosesActu[-1][2, 0])
         v = np.sin(self.__mPosesActu[-1][2, 0])
@@ -144,9 +149,9 @@ class Robot(object):
         aAx.quiver(x, y, u, v, color = aColor, angles = "xy", scale_units = "xy", scale = 1)
 
         # 軌跡描写
-        pxa = [e[0, 0] for e in self.__mPosesActu]
-        pya = [e[1, 0] for e in self.__mPosesActu]
-        aAx.plot(pxa, pya, c = "red", linewidth = 1.0, linestyle = "-", label = "Ground Truth")
+        pxa = [e[0, 0] for e in aPoses]
+        pya = [e[1, 0] for e in aPoses]
+        aAx.plot(pxa, pya, c = aColor, linewidth = 1.0, linestyle = "-", label = aLabel)
 
 
 # スキャンセンサモデル
@@ -200,7 +205,7 @@ def graph_based_slam(i, aPeriod_ms):
     # サブプロットを追加
     ax1 = plt.subplot2grid((1, 1), (0, 0), aspect = "equal", adjustable = "box-forced")
 
-    gRbt.draw(ax1, "red")
+    gRbt.draw(ax1)
 
     print("time:{0:.3f}[s] x = {1:.3f}[m], y = {2:.3f}[m], θ = {3:.3f}[deg]".format(time_s, x[0, 0], x[1, 0], np.rad2deg(x[2, 0])))
 
