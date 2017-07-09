@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from mylib import error_ellipse
 from mylib import limit
 from mylib import transform as tf
-
+import sample as sm
 
 class ScanSensor(object):
     """スキャンセンサclass"""
@@ -102,13 +102,14 @@ class Robot(object):
         """
 
         self.__mScnSnsr = ScanSensor(aScanRng, aScanAng, aLandMarks)
+        self.__mSample = sm.Sample(aDt, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01)
 
         #---------- 制御周期 ----------
         self.__mDt = aDt
 
         #---------- 姿勢 ----------
-        self.__mPosesAct = []
-        self.__mPosesAct.append(aPose)
+        self.__mPosesAct = [aPose]  # 姿勢（真値）
+        self.__mPosesGss = [aPose]  # 姿勢（推定値）
 
 
     def getPose(self):
@@ -121,8 +122,23 @@ class Robot(object):
         """
         return self.__mPosesAct[-1]
 
+    def move(self, aV, aW):
 
-    def motionModel(self, aV, aW):
+        ctr = np.array([[aV],
+                        [aW]])
+
+        actPose = self.__mSample.sampleMotionModelVelocity(self.__mPosesAct[-1], ctr)
+        gssPose = self.__motionModel(aV, aW)
+
+        self.__mPosesAct.append(actPose)
+        self.__mPosesGss.append(gssPose)
+
+        self.__mScnSnsr.judgeInclusion(actPose)
+
+
+
+
+    def __motionModel(self, aV, aW):
         """"動作処理
         引数：
             aV：速度ν[m/s]
@@ -142,9 +158,7 @@ class Robot(object):
                             [py],
                             [pt]])
 
-        self.__mPosesAct.append(newPose)
-
-        self.__mScnSnsr.judgeInclusion(newPose)
+        return newPose
 
 
     def draw(self, aAx, aColor):
@@ -206,7 +220,7 @@ def graph_based_slam(i, aPeriod_ms):
 
     time_s += aPeriod_ms / 1000
 
-    gRbt.motionModel(VEL_mps, OMEGA_rps)
+    gRbt.move(VEL_mps, OMEGA_rps)
 #    gRbt.judgeInclusion()
     x = gRbt.getPose()
 
