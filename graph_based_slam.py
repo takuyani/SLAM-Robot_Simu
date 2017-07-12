@@ -48,6 +48,20 @@ class ScanSensor(object):
         self.__local = np.array([self.__p[0],
                                  self.__p[1]])
 
+        self.__R = np.diag([0.0, 0.0, 0.0]) ** 2
+
+
+    def setNoiseParameter(self, aCovPx_m, aCovPy_m, aCovAng_rad):
+        """"観測雑音パラメータ設定
+        引数：
+            aCovPx_m：x方向[m]の標準偏差
+            aCovPy_m：y方向[m]の標準偏差
+            aCovAng_rad：方向[rad]の標準偏差
+        返り値：
+           なし
+        """
+        self.__R = np.diag([aCovPx_m, aCovPy_m, aCovAng_rad]) ** 2
+
 
     def judgeInclusion(self, aPose):
         """"センサ計測範囲内包含判定
@@ -59,7 +73,7 @@ class ScanSensor(object):
         返り値：
            なし
         """
-        lmLo = tf.world2local(aPose, self.__mLandMarks)
+        lmLo = tf.world2robot(aPose, self.__mLandMarks)
 
         normLm = np.linalg.norm(lmLo, axis = 1)  # ノルム計算
         radLm = np.arctan2(lmLo[:, 1], lmLo[:, 0])  # 角度計算
@@ -78,19 +92,28 @@ class ScanSensor(object):
         返り値：
            なし
         """
-        lmLo = tf.world2local(aPose, self.__mLandMarks)
+        obs = []
 
-        normLm = np.linalg.norm(lmLo, axis = 1)  # ノルム計算
-        radLm = np.arctan2(lmLo[:, 1], lmLo[:, 0])  # 角度計算
+        landMarkTrueDir = limit.limit_angle(tf.BASE_ANG * 2.0 - aPose[2, 0])
+
+        robotLandMarks = tf.world2robot(aPose, self.__mLandMarks)
+
+        normLm = np.linalg.norm(robotLandMarks, axis = 1)  # ノルム計算
+        radLm = np.arctan2(robotLandMarks[:, 1], robotLandMarks[:, 0])  # 角度計算
 
         upperRad = tf.BASE_ANG + self.__mScanAngle_rad
         lowerRad = tf.BASE_ANG - self.__mScanAngle_rad
-        self.__mObsFlg = [ True if (normLm[i] <= self.__mScanRange_m and (lowerRad <= radLm[i] and radLm[i] <= upperRad)) else False for i in range(lmLo.shape[0])]
+        self.__mObsFlg = [ True if (normLm[i] <= self.__mScanRange_m and (lowerRad <= radLm[i] and radLm[i] <= upperRad)) else False for i in range(robotLandMarks.shape[0])]
 
-        if (normLm[i] <= self.__mScanRange_m and (lowerRad <= radLm[i] and radLm[i] <= upperRad)):
-            "計測可能"
-        else
-            "計測不可能"
+        for i in range(robotLandMarks.shape[0]):
+            if (normLm[i] <= self.__mScanRange_m and (lowerRad <= radLm[i] and radLm[i] <= upperRad)):
+                n = np.random.multivariate_normal([0.0, 0.0, 0.0], self.__R, 1).T
+                xp = robotLandMarks[i, 0] + n[0, 0]
+                yp = robotLandMarks[i, 1] + n[1, 0]
+                tp = landMarkTrueDir + n[2, 0]
+                obs.append([i, xp, yp, tp])
+
+        return obs
 
 
     def draw(self, aAx, aColor, aPose):
@@ -101,7 +124,7 @@ class ScanSensor(object):
                aPose[1, 0]：y座標[m]
                aPose[2, 0]：方角(rad)
         """
-        world = tf.local2world(aPose, self.__local.T)
+        world = tf.robot2world(aPose, self.__local.T)
         aAx.plot(world.T[0], world.T[1], c = aColor, linewidth = 1.0, linestyle = "-")
 
         # ランドマークの描写
@@ -125,7 +148,8 @@ class Robot(object):
             aDt：演算周期[sec]
         """
         self.__mScnSnsr = ScanSensor(aScanRng, aScanAng, aLandMarks)
-        self.__mMvMdl = mm.MotionModel(aDt, 0.3, 0.3, 0.3, 0.3, 0.1, 0.1)
+#        self.__mMvMdl = mm.MotionModel(aDt, 0.3, 0.3, 0.3, 0.3, 0.1, 0.1)
+        self.__mMvMdl = mm.MotionModel(aDt, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001)
 
         #---------- 制御周期 ----------
         self.__mDt = aDt
@@ -135,7 +159,8 @@ class Robot(object):
         self.__mPosesGues = [aPose]  # 姿勢（推定値）
         #---------- 制御 ----------
         self.__mCtr = []
-
+        #---------- 観測 ----------
+        self.__mObs = []
 
 
     def getPose(self):
@@ -157,14 +182,17 @@ class Robot(object):
         self.__mCtr.append(np.array([aV, aW]))
         self.__mPosesActu.append(poseActu)
         self.__mPosesGues.append(poseGues)
+        self.__mObs.append(self.__mScnSnsr.scan(poseActu))
 
         self.__mScnSnsr.judgeInclusion(poseActu)
 
-    def draw(self, aAx):
+    def draw(self, aAx, aAx2):
         self.__mScnSnsr.draw(aAx, "green", self.__mPosesActu[-1])
 
         self.__drawPoses(aAx, "red", "Guess", self.__mPosesGues)
         self.__drawPoses(aAx, "blue", "Actual", self.__mPosesActu)
+
+        self.__debug(aAx2)
 
 
     def __drawPoses(self, aAx, aColor, aLabel, aPoses):
@@ -180,6 +208,23 @@ class Robot(object):
         pxa = [e[0, 0] for e in aPoses]
         pya = [e[1, 0] for e in aPoses]
         aAx.plot(pxa, pya, c = aColor, linewidth = 1.0, linestyle = "-", label = aLabel)
+
+    def __debug(self, aAx):
+        a = self.__mObs[-1]
+        if len(a) != 0:
+            pxa = [e[1] for e in a]
+            pya = [e[2] for e in a]
+            pta = [e[3] for e in a]
+            aAx.scatter(pxa, pya, c="red", marker='o', alpha=0.5)
+
+            x = pxa
+            y = pya
+            # 矢印（ベクトル）の成分
+            u = np.cos(pta)
+            v = np.sin(pta)
+            # 矢印描写
+            aAx.quiver(x, y, u, v, color = "red", angles = "xy", scale_units = "xy", scale = 1)
+
 
 
 # スキャンセンサモデル
@@ -230,9 +275,10 @@ def graph_based_slam(i, aPeriod_ms):
     plt.cla()
 
     # サブプロットを追加
-    ax1 = plt.subplot2grid((1, 1), (0, 0), aspect = "equal", adjustable = "box-forced")
+    ax1 = plt.subplot2grid((1, 2), (0, 0), aspect = "equal", adjustable = "box-forced")
+    ax2 = plt.subplot2grid((1, 2), (0, 1), aspect = "equal", adjustable = "box-forced")
 
-    gRbt.draw(ax1)
+    gRbt.draw(ax1, ax2)
 
     print("time:{0:.3f}[s] x = {1:.3f}[m], y = {2:.3f}[m], θ = {3:.3f}[deg]".format(time_s, x[0, 0], x[1, 0], np.rad2deg(x[2, 0])))
 
@@ -243,6 +289,13 @@ def graph_based_slam(i, aPeriod_ms):
     ax1.grid()
     ax1.legend(fontsize = 10)
 
+    ax2.set_xlabel("x [m]")
+    ax2.set_ylabel("y [m]")
+    ax2.set_title("Debug")
+#    ax2.axis("equal", adjustable = "box")
+    ax2.axis([-15, 15, -15, 15])
+    ax2.grid()
+    ax2.legend(fontsize = 10)
 
 #    ax2.scatter(loLM[:, 0], loLM[:, 1], s = 100, c = "yellow", marker =ax", alpha = 0.5, linewidthsax"2",
 #                edgaxlors = "orange", label = "Land Mark"ax

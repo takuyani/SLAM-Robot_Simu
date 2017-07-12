@@ -11,53 +11,51 @@ import matplotlib.pyplot as plt
 
 BASE_ANG = np.pi / 2.0
 
-def world2local(origin, world):
-    '''ワールド座標系→ローカル座標系変換
+def world2robot(origin, world):
+    '''ワールド座標系→ロボット座標系変換
     引数：
         origin：変換原点位置（ベクトル）
-         origin[0, 0]：x座標
-         origin[1, 0]：y座標
-         origin[2, 0]：方角(rad)
+            origin[0, 0]：x座標
+            origin[1, 0]：y座標
+            origin[2, 0]：方角(rad)
         world：ワールド座標（ベクトル）
-         world[n, 0]：x座標
-         world[n, 1]：y座標
-         n:要素数
+            world[n, 0]：x座標
+            world[n, 1]：y座標
+            n:要素数
     返り値：
-        local：ローカル座標（ベクトル）
-         local[n, 0]：x座標
-         local[n, 1]：y座標
-         n:要素数
-
+        robot：ロボット座標（ベクトル）
+            robot[n, 0]：x座標
+            robot[n, 1]：y座標
+            n:要素数
     '''
     yaw = BASE_ANG - origin[2, 0]
     diff = world - origin.T[0, 0:2]
     rot = np.array([[np.cos(yaw), -np.sin(yaw)],
                     [np.sin(yaw), np.cos(yaw) ]])
-    local = (rot @ diff.T).T
-    return local
+    robot = (rot @ diff.T).T
+    return robot
 
-def local2world(origin, local):
+def robot2world(origin, robot):
     '''ローカル座標系→ワールド座標系変換
     引数：
         origin：変換原点位置（ベクトル）
-         origin[0, 0]：x座標
-         origin[1, 0]：y座標
-         origin[2, 0]：方角(rad)
-        local：ローカル座標（ベクトル）
-         local[n, 0]：x座標
-         local[n, 1]：y座標
-         n:要素数
+            origin[0, 0]：x座標
+            origin[1, 0]：y座標
+            origin[2, 0]：方角(rad)
+        robot：ロボット座標（ベクトル）
+            robot[n, 0]：x座標
+            robot[n, 1]：y座標
+            n:要素数
     返り値：
         world：ワールド座標（ベクトル）
-         world[n, 0]：x座標
-         world[n, 1]：y座標
-         n:要素数
-
+            world[n, 0]：x座標
+            world[n, 1]：y座標
+            n:要素数
     '''
     yaw = origin[2, 0] - BASE_ANG
     rot = np.array([[np.cos(yaw), -np.sin(yaw)],
                     [np.sin(yaw), np.cos(yaw) ]])
-    world = (rot @ local.T).T + origin.T[0, 0:2]
+    world = (rot @ robot.T).T + origin.T[0, 0:2]
     return world
 
 if __name__ == '__main__':
@@ -73,8 +71,8 @@ if __name__ == '__main__':
     cy = origin[1, 0]
     scl = 10
 
-    local = world2local(origin, world)
-    world2 = local2world(origin, local)
+    local = world2robot(origin, world)
+    world2 = robot2world(origin, local)
 
 
     # 新規のウィンドウを描画
@@ -121,7 +119,7 @@ if __name__ == '__main__':
     ax1.legend()
 
     ax2.grid()
-    ax2.set_title('Local', fontsize=12)
+    ax2.set_title('Robot', fontsize=12)
     ax2.axis([-scl, scl, -scl, scl])
     ax2.legend()
 

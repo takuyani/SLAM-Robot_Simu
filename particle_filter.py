@@ -148,7 +148,7 @@ class ParticleFilter(object):
         返り値：
             z_l：ローカル座標系で観測されたLandMark
         '''
-        z_l = tf.world2local(x_true, self.__LM)
+        z_l = tf.world2robot(x_true, self.__LM)
         w = np.random.multivariate_normal([0.0, 0.0], self.__R, z_l.shape[0])
         z_l += w
         return z_l
@@ -184,7 +184,7 @@ class ParticleFilter(object):
         bn = np.zeros(self.__NP)
         for i in range(self.__NP):
             px = np.array([px_est[:, i]]).T
-            pz_l = tf.world2local(px, self.__LM)
+            pz_l = tf.world2robot(px, self.__LM)
             diff_pz = pz_l - z_l
             dx = diff_pz[:, 0]
             dy = diff_pz[:, 1]

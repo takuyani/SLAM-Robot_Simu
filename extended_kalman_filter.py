@@ -142,7 +142,7 @@ class ExtendedKalmanFilter(object):
                         [0.0],
                         [np.deg2rad(90.0)]])
         y_l = (self.__C @ x_l) + w
-        y_w = tf.local2world(x, y_l.T)
+        y_w = tf.robot2world(x, y_l.T)
         return y_w.T
 
     def __calc_kalman_gain(self, P_m, R):
