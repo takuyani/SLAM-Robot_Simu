@@ -68,6 +68,30 @@ class ScanSensor(object):
         lowerRad = tf.BASE_ANG - self.__mScanAngle_rad
         self.__mObsFlg = [ True if (normLm[i] <= self.__mScanRange_m and (lowerRad <= radLm[i] and radLm[i] <= upperRad)) else False for i in range(lmLo.shape[0])]
 
+    def scan(self, aPose):
+        """"スキャン結果
+        引数：
+            aPose：姿勢
+               aPose[0, 0]：x座標[m]
+               aPose[1, 0]：y座標[m]
+               aPose[2, 0]：方角(rad)
+        返り値：
+           なし
+        """
+        lmLo = tf.world2local(aPose, self.__mLandMarks)
+
+        normLm = np.linalg.norm(lmLo, axis = 1)  # ノルム計算
+        radLm = np.arctan2(lmLo[:, 1], lmLo[:, 0])  # 角度計算
+
+        upperRad = tf.BASE_ANG + self.__mScanAngle_rad
+        lowerRad = tf.BASE_ANG - self.__mScanAngle_rad
+        self.__mObsFlg = [ True if (normLm[i] <= self.__mScanRange_m and (lowerRad <= radLm[i] and radLm[i] <= upperRad)) else False for i in range(lmLo.shape[0])]
+
+        if (normLm[i] <= self.__mScanRange_m and (lowerRad <= radLm[i] and radLm[i] <= upperRad)):
+            "計測可能"
+        else
+            "計測不可能"
+
 
     def draw(self, aAx, aColor, aPose):
         """"描写
@@ -100,16 +124,18 @@ class Robot(object):
                aPose[2, 0]：方角(rad)
             aDt：演算周期[sec]
         """
-
         self.__mScnSnsr = ScanSensor(aScanRng, aScanAng, aLandMarks)
-        self.__mMvMdl = mm.MotionModel(aDt, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)
+        self.__mMvMdl = mm.MotionModel(aDt, 0.3, 0.3, 0.3, 0.3, 0.1, 0.1)
 
         #---------- 制御周期 ----------
         self.__mDt = aDt
 
         #---------- 姿勢 ----------
-        self.__mPosesActu = [aPose]  # 姿勢（真値）
-        self.__mPosesTrue = [aPose]  # 姿勢（推定値）
+        self.__mPosesActu = [aPose]  # 姿勢（実際値）
+        self.__mPosesGues = [aPose]  # 姿勢（推定値）
+        #---------- 制御 ----------
+        self.__mCtr = []
+
 
 
     def getPose(self):
@@ -125,17 +151,19 @@ class Robot(object):
     def move(self, aV, aW):
 
         poseActu = self.__mMvMdl.moveWithNoise(self.__mPosesActu[-1], aV, aW)
-        poseTrue = self.__mMvMdl.moveWithoutNoise(self.__mPosesTrue[-1], aV, aW)
+        poseGues = self.__mMvMdl.moveWithoutNoise(self.__mPosesGues[-1], aV, aW)
 
+        # 履歴保持
+        self.__mCtr.append(np.array([aV, aW]))
         self.__mPosesActu.append(poseActu)
-        self.__mPosesTrue.append(poseTrue)
+        self.__mPosesGues.append(poseGues)
 
         self.__mScnSnsr.judgeInclusion(poseActu)
 
     def draw(self, aAx):
         self.__mScnSnsr.draw(aAx, "green", self.__mPosesActu[-1])
 
-        self.__drawPoses(aAx, "red", "Ground Truth", self.__mPosesTrue)
+        self.__drawPoses(aAx, "red", "Guess", self.__mPosesGues)
         self.__drawPoses(aAx, "blue", "Actual", self.__mPosesActu)
 
 
@@ -143,8 +171,8 @@ class Robot(object):
         x = aPoses[-1][0, 0]
         y = aPoses[-1][1, 0]
         # 矢印（ベクトル）の成分
-        u = np.cos(self.__mPosesActu[-1][2, 0])
-        v = np.sin(self.__mPosesActu[-1][2, 0])
+        u = np.cos(aPoses[-1][2, 0])
+        v = np.sin(aPoses[-1][2, 0])
         # 矢印描写
         aAx.quiver(x, y, u, v, color = aColor, angles = "xy", scale_units = "xy", scale = 1)
 
@@ -197,7 +225,6 @@ def graph_based_slam(i, aPeriod_ms):
     time_s += aPeriod_ms / 1000
 
     gRbt.move(VEL_mps, OMEGA_rps)
-#    gRbt.judgeInclusion()
     x = gRbt.getPose()
 
     plt.cla()

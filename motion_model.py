@@ -46,15 +46,11 @@ class MotionModel(object):
 
         a = velHat / omgHat
         b = omgHat * self.__mDt
-
-        px = aPose[0, 0]
-        py = aPose[1, 0]
         pt = aPose[2, 0]
 
-        pxs = px - (a * np.sin(pt)) + (a * np.sin(pt + b))
-        pys = py + (a * np.cos(pt)) - (a * np.cos(pt + b))
-        pts = pt + (omgHat + gamHat) * self.__mDt
-        pts = limit.limit_angle(pts)
+        pxs = aPose[0, 0] - (a * np.sin(pt)) + (a * np.sin(pt + b))
+        pys = aPose[1, 0] + (a * np.cos(pt)) - (a * np.cos(pt + b))
+        pts = limit.limit_angle(pt + (omgHat + gamHat) * self.__mDt)
 
         newPose = np.array([[pxs],
                             [pys],
@@ -87,7 +83,7 @@ class MotionModel(object):
         return newPose
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
     #---------- 状態空間モデルパラメータ定義 ----------
     RADIUS_m = 1.0  # 周回半径[m]
@@ -101,35 +97,44 @@ if __name__ == '__main__':
                      [py0],
                      [np.deg2rad(yaw0)]])
 
-    fig = plt.figure(figsize=(12, 9))
+    fig = plt.figure(figsize = (12, 9))
     ax = plt.subplot2grid((1, 1), (0, 0))
 
-    a1 = [0.01, 0.01, 0.1, 0.1, 0.01, 0.01]
+    a1 = [0.05, 0.05, 0.01, 0.01, 0.01, 0.01]
     samp1 = MotionModel(1.0, a1[0], a1[1], a1[2], a1[3], a1[4], a1[5])
 
-    a2 = [0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+    a2 = [0.01, 0.01, 0.05, 0.05, 0.01, 0.01]
     samp2 = MotionModel(1.0, a2[0], a2[1], a2[2], a2[3], a2[4], a2[5])
+
+    a3 = [0.01, 0.01, 0.01, 0.01, 0.1, 0.1]
+    samp3 = MotionModel(1.0, a3[0], a3[1], a3[2], a3[3], a3[4], a3[5])
 
     P1 = []
     P2 = []
+    P3 = []
     for i in range(500):
         SampPose = samp1.moveWithNoise(Pose, VEL_mps, YAW_RATE_rps)
         P1.append(SampPose[0:2, :])
         SampPose = samp2.moveWithNoise(Pose, VEL_mps, YAW_RATE_rps)
         P2.append(SampPose[0:2, :])
+        SampPose = samp3.moveWithNoise(Pose, VEL_mps, YAW_RATE_rps)
+        P3.append(SampPose[0:2, :])
 
-    a, b = np.array(np.concatenate(P1, axis=1))
-    ax.scatter(a, b, c="red", marker='.', alpha=0.5, label='Sampling1')
+    a, b = np.array(np.concatenate(P1, axis = 1))
+    ax.scatter(a, b, c = "red", marker = "o", alpha = 0.5, label = "Sampling1")
 
-    a, b = np.array(np.concatenate(P2, axis=1))
-    ax.scatter(a, b, c="blue", marker='.', alpha=0.5, label='Sampling2')
+    a, b = np.array(np.concatenate(P2, axis = 1))
+    ax.scatter(a, b, c = "green", marker = "o", alpha = 0.5, label = "Sampling2")
 
-    ax.set_xlabel('x [m]')
-    ax.set_ylabel('y [m]')
-    ax.set_title('Sampling Test')
-    ax.axis('equal', adjustable='box')
+    a, b = np.array(np.concatenate(P3, axis = 1))
+    ax.scatter(a, b, c = "blue", marker = "o", alpha = 0.5, label = "Sampling3")
+
+    ax.set_xlabel("x [m]")
+    ax.set_ylabel("y [m]")
+    ax.set_title("Sampling Test")
+    ax.axis("equal", adjustable = "box")
     ax.grid()
-    ax.legend(fontsize=10)
+    ax.legend(fontsize = 10)
 
     plt.show()
 
