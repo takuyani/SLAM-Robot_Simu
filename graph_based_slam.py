@@ -62,26 +62,6 @@ class ScanSensor(object):
         """
         self.__R = np.diag([aCovPx_m, aCovPy_m, aCovAng_rad]) ** 2
 
-
-    def judgeInclusion(self, aPose):
-        """"センサ計測範囲内包含判定
-        引数：
-            aPose：姿勢
-               aPose[0, 0]：x座標[m]
-               aPose[1, 0]：y座標[m]
-               aPose[2, 0]：方角(rad)
-        返り値：
-           なし
-        """
-        lmLo = tf.world2robot(aPose, self.__mLandMarks)
-
-        normLm = np.linalg.norm(lmLo, axis = 1)  # ノルム計算
-        radLm = np.arctan2(lmLo[:, 1], lmLo[:, 0])  # 角度計算
-
-        upperRad = tf.BASE_ANG + self.__mScanAngle_rad
-        lowerRad = tf.BASE_ANG - self.__mScanAngle_rad
-        self.__mObsFlg = [ True if (normLm[i] <= self.__mScanRange_m and (lowerRad <= radLm[i] and radLm[i] <= upperRad)) else False for i in range(lmLo.shape[0])]
-
     def scan(self, aPose):
         """"スキャン結果
         引数：
@@ -179,12 +159,10 @@ class Robot(object):
         poseGues = self.__mMvMdl.moveWithoutNoise(self.__mPosesGues[-1], aV, aW)
 
         # 履歴保持
-        self.__mCtr.append(np.array([aV, aW]))
-        self.__mPosesActu.append(poseActu)
-        self.__mPosesGues.append(poseGues)
-        self.__mObs.append(self.__mScnSnsr.scan(poseActu))
-
-        self.__mScnSnsr.judgeInclusion(poseActu)
+        self.__mCtr.append(np.array([aV, aW]))  # 制御
+        self.__mPosesActu.append(poseActu)      # 姿勢（実際値）
+        self.__mPosesGues.append(poseGues)      # 姿勢（推定値）
+        self.__mObs.append(self.__mScnSnsr.scan(poseActu))  # 観測結果
 
     def draw(self, aAx, aAx2):
         self.__mScnSnsr.draw(aAx, "green", self.__mPosesActu[-1])
