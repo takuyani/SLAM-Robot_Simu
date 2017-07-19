@@ -48,7 +48,7 @@ class ScanSensor(object):
         self.__local = np.array([self.__p[0],
                                  self.__p[1]])
 
-        self.__R = np.diag([0.0, 0.0, 0.0]) ** 2
+        self.__R = np.diag([0.001, 0.001, 0.001]) ** 2
 
 
     def setNoiseParameter(self, aCovPx_m, aCovPy_m, aCovAng_rad):
@@ -163,6 +163,10 @@ class Robot(object):
         self.__mPosesActu.append(poseActu)      # 姿勢（実際値）
         self.__mPosesGues.append(poseGues)      # 姿勢（推定値）
         self.__mObs.append(self.__mScnSnsr.scan(poseActu))  # 観測結果
+
+
+#    def estimateOpticalTrajectory(self):
+
 
     def draw(self, aAx, aAx2):
         self.__mScnSnsr.draw(aAx, "green", self.__mPosesActu[-1])
