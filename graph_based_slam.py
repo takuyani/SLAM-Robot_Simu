@@ -83,13 +83,14 @@ class ScanSensor(object):
 
         upperRad = tf.BASE_ANG + self.__mScanAngle_rad
         lowerRad = tf.BASE_ANG - self.__mScanAngle_rad
-        self.__mObsFlg = [ True if (normLm[i] <= self.__mScanRange_m and (lowerRad <= radLm[i] and radLm[i] <= upperRad)) else False for i in range(robotLandMarks.shape[0])]
+        self.__mObsFlg = [ True if (normLm[i] <= self.__mScanRange_m and (lowerRad <= radLm[i] and radLm[i] <= upperRad)) else False for i in range(len(radLm))]
 
-        for i in range(robotLandMarks.shape[0]):
+        for i, rlm in enumerate(robotLandMarks):
             if (normLm[i] <= self.__mScanRange_m and (lowerRad <= radLm[i] and radLm[i] <= upperRad)):
                 n = np.random.multivariate_normal([0.0, 0.0, 0.0], self.__R, 1).T
-                xp = robotLandMarks[i, 0] + n[0, 0]
-                yp = robotLandMarks[i, 1] + n[1, 0]
+                #TODO:計測座標系でノイズを付加する
+                xp = rlm[0] + n[0, 0]
+                yp = rlm[1] + n[1, 0]
                 tp = landMarkTrueDir + n[2, 0]
                 obs.append([i, xp, yp, tp])
 
@@ -165,7 +166,24 @@ class Robot(object):
         self.__mObs.append(self.__mScnSnsr.scan(poseActu))  # 観測結果
 
 
-#    def estimateOpticalTrajectory(self):
+    def estimateOpticalTrajectory(self):
+        print("Ctr:{0}, PosesActu = {1}, PosesGues = {2}, Obs = {3}".format(len(self.__mCtr), len(self.__mPosesActu),
+                                                                            len(self.__mPosesGues), len(self.__mObs)))
+
+        obsPrev = 0
+        for i, obs in enumerate(self.__mObs):
+            if i > 1:
+                if len(obs) > 0 and len(obsPrev) > 0:
+                    for j in range(len(obs)):
+                        for k in range(len(obsPrev)):
+                            if obs[j][0] == obsPrev[k][0]:
+                                print("エッジ[{0}]".format(i))
+
+                    print("ありi={0}".format(i))
+                else:
+                    print("なし")
+
+            obsPrev = obs
 
 
     def draw(self, aAx, aAx2):
@@ -219,9 +237,9 @@ OMEGA_rps = np.deg2rad(10.0)  # 角速度[rad/s]
 VEL_mps = RADIUS_m * OMEGA_rps  # 速度[m/s]
 
 # ランドマーク
-LAND_MARKS = np.array([[ 5.0, 5.0],
+LAND_MARKS = np.array([[ 0.0, 10.0],
                        [ 2.0, -3.0],
-                       [ 0.0, 10.0],
+                       [ 5.0, 5.0],
                        [-5.0, -1.0],
                        [ 0.0, 0.0]])
 
@@ -253,6 +271,7 @@ def graph_based_slam(i, aPeriod_ms):
 
     gRbt.move(VEL_mps, OMEGA_rps)
     x = gRbt.getPose()
+    gRbt.estimateOpticalTrajectory()
 
     plt.cla()
 
@@ -290,6 +309,7 @@ def graph_based_slam(i, aPeriod_ms):
 
 
 if __name__ == "__main__":
+
 
     frame_cnt = int(36 * 1000 / PERIOD_ms)
 
