@@ -16,6 +16,7 @@ from mylib import error_ellipse
 from mylib import limit
 from mylib import transform as tf
 import motion_model as mm
+from docutils.parsers import null
 
 class ScanSensor(object):
     """スキャンセンサclass"""
@@ -87,14 +88,24 @@ class ScanSensor(object):
 
         for i, rlm in enumerate(robotLandMarks):
             if (normLm[i] <= self.__mScanRange_m and (lowerRad <= radLm[i] and radLm[i] <= upperRad)):
-                n = np.random.multivariate_normal([0.0, 0.0, 0.0], self.__R, 1).T
-                #TODO:計測座標系でノイズを付加する
+                measR = self.rotateCovariance(self.__R, radLm[i] - tf.BASE_ANG) # ロボット座標系→計測座標系変換
+                n = np.random.multivariate_normal([0.0, 0.0, 0.0], measR, 1).T
                 xp = rlm[0] + n[0, 0]
                 yp = rlm[1] + n[1, 0]
                 tp = landMarkTrueDir + n[2, 0]
                 obs.append([i, xp, yp, tp])
 
         return obs
+
+    def rotateCovariance(self, aCov, aRad):
+        c = np.cos(aRad)
+        s = np.sin(aRad)
+
+        rotmat = np.array([[  c,  -s, 0.0],
+                           [  s,   c, 0.0],
+                           [0.0, 0.0, 1.0]])
+
+        return rotmat @ aCov @ rotmat.T
 
 
     def draw(self, aAx, aColor, aPose):
@@ -143,6 +154,8 @@ class Robot(object):
         #---------- 観測 ----------
         self.__mObs = []
 
+        self.__mObsMu = []
+
 
     def getPose(self):
         """"姿勢取得処理
@@ -170,21 +183,20 @@ class Robot(object):
         print("Ctr:{0}, PosesActu = {1}, PosesGues = {2}, Obs = {3}".format(len(self.__mCtr), len(self.__mPosesActu),
                                                                             len(self.__mPosesGues), len(self.__mObs)))
 
-        obsPrev = 0
-        for i, obs in enumerate(self.__mObs):
-            if i > 1:
-                if len(obs) > 0 and len(obsPrev) > 0:
-                    for j in range(len(obs)):
-                        for k in range(len(obsPrev)):
-                            if obs[j][0] == obsPrev[k][0]:
-                                print("エッジ[{0}]".format(i))
+        obsNext = []
+        for obsCrnt, pose in zip(reversed(self.__mObs), reversed(self.__mPosesGues)):
+            if len(obsCrnt) > 0 and len(obsNext) > 0:
+                for j in range(len(obsCrnt)):
+                    for k in range(len(obsNext)):
+                        if obsCrnt[j][0] == obsNext[k][0]:
+                            obsCrntWorld = tf.robot2world(pose, np.array(obsCrnt[j][1:-1]))
+                            obsNextWorld = tf.robot2world(pose, np.array(obsNext[j][1:-1]))
+                            self.__mObsMu.insert(0, obsNextWorld - obsCrntWorld)
 
-                    print("ありi={0}".format(i))
-                else:
-                    print("なし")
+            else:
+                print("なし")
 
-            obsPrev = obs
-
+            obsNext = obsCrnt
 
     def draw(self, aAx, aAx2):
         self.__mScnSnsr.draw(aAx, "green", self.__mPosesActu[-1])
@@ -244,7 +256,7 @@ LAND_MARKS = np.array([[ 0.0, 10.0],
                        [ 0.0, 0.0]])
 
 # アニメーション更新周期[msec]
-PERIOD_ms = 100
+PERIOD_ms = 1000
 
 x_base = np.array([[10.0],  # x座標[m]
                    [ 0.0],  # y座標[m]
@@ -289,6 +301,39 @@ def graph_based_slam(i, aPeriod_ms):
     ax1.axis("equal", adjustable = "box")
     ax1.grid()
     ax1.legend(fontsize = 10)
+
+
+
+
+    # データ数
+    data_num = 1000
+
+    # 平均
+    mu = np.array([[0.0],
+                   [0.0]])
+    # 共分散
+    cov_x = 8.00
+    cov_y = 1.00
+    cov_t = 1.0
+    cov = np.array([[ cov_x, 0.0  , 0.0  ],
+                    [ 0.0  , cov_y, 0.0  ],
+                    [ 0.0  , 0.0  , cov_t]])
+
+    P = np.random.multivariate_normal([0.0, 0.0, 0.0], cov, data_num).T
+
+    scn = ScanSensor(0, 0, LAND_MARKS)
+
+    aRad = np.deg2rad(45)
+    cov2 = scn.rotateCovariance(cov, aRad - tf.BASE_ANG)
+
+    P2 = np.random.multivariate_normal([0.0, 0.0, 0.0], cov2, data_num).T
+
+
+    # 散布図をプロットす
+    ax2.scatter(P[0], P[1], color='r', marker='x', label="$K_1$")
+    ax2.scatter(P2[0], P2[1], color='b', marker='x', label="$K_1$")
+
+
 
     ax2.set_xlabel("x [m]")
     ax2.set_ylabel("y [m]")
