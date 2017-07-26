@@ -31,8 +31,8 @@ class ScanSensor(object):
         self.__mScanAngle_rad = aAngle_rad
         self.__mReslAng = int(np.rad2deg(aAngle_rad))
         self.__mLandMarks = aLandMarks
-        self.__mNum = aLandMarks.shape[0]
-        self.__mObsFlg = [[False] * self.__mNum]
+        self.__mLandMarksNum = aLandMarks.shape[0]
+        self.__mObsFlg = [[False] * self.__mLandMarksNum]
 
         ang = np.rad2deg(aAngle_rad)
         ofs = np.rad2deg(tf.BASE_ANG)
@@ -49,10 +49,15 @@ class ScanSensor(object):
         self.__local = np.array([self.__p[0],
                                  self.__p[1]])
 
-        self.__R = np.diag([0.001, 0.001, 0.001]) ** 2
+        #観測雑音定義
+        self.__R_DIST = 10  # ランドマーク距離雑音[%]
+        self.__R_DIR_SIGMA = 3 * np.pi / 180  # ランドマーク観測方向雑音標準偏差[rad]
+        self.__R_ORIENT_SIGMA = 3 * np.pi / 180  # ランドマーク向き雑音標準偏差[rad]
+
+#        self.__R = np.diag([0.001, 0.001, 0.001]) ** 2
 
 
-    def setNoiseParameter(self, aCovPx_m, aCovPy_m, aCovAng_rad):
+#    def setNoiseParameter(self, aCovPx_m, aCovPy_m, aCovAng_rad):
         """"観測雑音パラメータ設定
         引数：
             aCovPx_m：x方向[m]の標準偏差
@@ -61,7 +66,7 @@ class ScanSensor(object):
         返り値：
            なし
         """
-        self.__R = np.diag([aCovPx_m, aCovPy_m, aCovAng_rad]) ** 2
+#        self.__R = np.diag([aCovPx_m, aCovPy_m, aCovAng_rad]) ** 2
 
     def scan(self, aPose):
         """"スキャン結果
@@ -75,25 +80,33 @@ class ScanSensor(object):
         """
         obs = []
 
-        landMarkTrueDir = limit.limit_angle(tf.BASE_ANG * 2.0 - aPose[2, 0])
+#        landMarkTrueDir = limit.limit_angle(tf.BASE_ANG * 2.0 - aPose[2, 0])
 
-        robotLandMarks = tf.world2robot(aPose, self.__mLandMarks)
+        robotLandMarks = tf.world2robot(aPose, self.__mLandMarks) # 世界座標系→ロボット座標系変換
 
-        normLm = np.linalg.norm(robotLandMarks, axis = 1)  # ノルム計算
-        radLm = np.arctan2(robotLandMarks[:, 1], robotLandMarks[:, 0])  # 角度計算
+        distLm = np.linalg.norm(robotLandMarks, axis = 1)  # ランドマーク距離算出
+        dirLm_rad = np.arctan2(robotLandMarks[:, 1], robotLandMarks[:, 0])  # ランドマーク観測方向算出
+        orientLm_rad =  np.ones(robotLandMarks.shape[0]) * (tf.BASE_ANG - aPose[2, 0])  # ランドマーク向き算出
 
         upperRad = tf.BASE_ANG + self.__mScanAngle_rad
         lowerRad = tf.BASE_ANG - self.__mScanAngle_rad
-        self.__mObsFlg = [ True if (normLm[i] <= self.__mScanRange_m and (lowerRad <= radLm[i] and radLm[i] <= upperRad)) else False for i in range(len(radLm))]
+        self.__mObsFlg = [ True if (distLm[i] <= self.__mScanRange_m and (lowerRad <= dirLm_rad[i] and dirLm_rad[i] <= upperRad)) else False for i in range(len(dirLm_rad))]
 
-        for i, rlm in enumerate(robotLandMarks):
-            if (normLm[i] <= self.__mScanRange_m and (lowerRad <= radLm[i] and radLm[i] <= upperRad)):
-                measR = self.rotateCovariance(self.__R, radLm[i] - tf.BASE_ANG) # ロボット座標系→計測座標系変換
-                n = np.random.multivariate_normal([0.0, 0.0, 0.0], measR, 1).T
-                xp = rlm[0] + n[0, 0]
-                yp = rlm[1] + n[1, 0]
-                tp = landMarkTrueDir + n[2, 0]
-                obs.append([i, xp, yp, tp])
+        for i, flg in enumerate(self.__mObsFlg):
+            if (flg == True):
+                distActu = np.random.normal(distLm, distLm / self.__R_DIST)
+                dirActu = np.random.normal(dirLm_rad, self.__R_DIR_SIGMA)
+                orientActu = np.random.normal(orientLm_rad, self.__R_ORIENT_SIGMA)
+                obs.append([i, distActu, dirActu, orientActu])
+
+
+#                measR = self.rotateCovariance(self.__R, dirLm_rad[i] - tf.BASE_ANG) # ロボット座標系→計測座標系変換
+#                n = np.random.multivariate_normal([0.0, 0.0, 0.0], measR, 1).T
+#                xp = rlm[0] + n[0, 0]
+#                yp = rlm[1] + n[1, 0]
+#                tp = landMarkTrueDir + n[2, 0]
+
+#                obs.append([i, xp, yp, tp])
 
         return obs
 
@@ -168,6 +181,7 @@ class Robot(object):
         return self.__mPosesActu[-1]
 
     def move(self, aV, aW):
+        print("[移動]")
 
         poseActu = self.__mMvMdl.moveWithNoise(self.__mPosesActu[-1], aV, aW)
         poseGues = self.__mMvMdl.moveWithoutNoise(self.__mPosesGues[-1], aV, aW)
@@ -180,23 +194,28 @@ class Robot(object):
 
 
     def estimateOpticalTrajectory(self):
-        print("Ctr:{0}, PosesActu = {1}, PosesGues = {2}, Obs = {3}".format(len(self.__mCtr), len(self.__mPosesActu),
+        print("[軌跡推定]Ctr:{0}, PosesActu = {1}, PosesGues = {2}, Obs = {3}".format(len(self.__mCtr), len(self.__mPosesActu),
                                                                             len(self.__mPosesGues), len(self.__mObs)))
 
         obsNext = []
-        for obsCrnt, pose in zip(reversed(self.__mObs), reversed(self.__mPosesGues)):
+        poseNext = []
+        for obsCrnt, poseCrnt in zip(reversed(self.__mObs), reversed(self.__mPosesGues)):
             if len(obsCrnt) > 0 and len(obsNext) > 0:
                 for j in range(len(obsCrnt)):
                     for k in range(len(obsNext)):
                         if obsCrnt[j][0] == obsNext[k][0]:
-                            obsCrntWorld = tf.robot2world(pose, np.array(obsCrnt[j][1:-1]))
-                            obsNextWorld = tf.robot2world(pose, np.array(obsNext[j][1:-1]))
+                            #TODO:バグあり
+                            obsCrntWorld = tf.world2robot(np.array(obsCrnt[j][1:-1], poseCrnt))
+                            obsCrntTemp = np.array(obsCrnt[j][1:-1])
+                            obsNextWorld = tf.world2robot(np.array(obsNext[j][1:-1]), poseNext)
+                            obsNextTemp = np.array(obsNext[j][1:-1])
                             self.__mObsMu.insert(0, obsNextWorld - obsCrntWorld)
 
             else:
                 print("なし")
 
             obsNext = obsCrnt
+            poseNext = poseCrnt
 
     def draw(self, aAx, aAx2):
         self.__mScnSnsr.draw(aAx, "green", self.__mPosesActu[-1])
