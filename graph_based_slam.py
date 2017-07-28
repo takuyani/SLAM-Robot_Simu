@@ -94,9 +94,9 @@ class ScanSensor(object):
 
         for i, flg in enumerate(self.__mObsFlg):
             if (flg == True):
-                distActu = np.random.normal(distLm, distLm / self.__R_DIST)
-                dirActu = np.random.normal(dirLm_rad, self.__R_DIR_SIGMA)
-                orientActu = np.random.normal(orientLm_rad, self.__R_ORIENT_SIGMA)
+                distActu = np.random.normal(distLm[i], distLm[i] / self.__R_DIST)
+                dirActu = limit.limit_angle(np.random.normal(dirLm_rad[i], self.__R_DIR_SIGMA))
+                orientActu = limit.limit_angle(np.random.normal(orientLm_rad[i], self.__R_ORIENT_SIGMA))
                 obs.append([i, distActu, dirActu, orientActu])
 
 
@@ -205,17 +205,67 @@ class Robot(object):
                     for k in range(len(obsNext)):
                         if obsCrnt[j][0] == obsNext[k][0]:
                             #TODO:バグあり
-                            obsCrntWorld = tf.world2robot(np.array(obsCrnt[j][1:-1], poseCrnt))
-                            obsCrntTemp = np.array(obsCrnt[j][1:-1])
-                            obsNextWorld = tf.world2robot(np.array(obsNext[j][1:-1]), poseNext)
-                            obsNextTemp = np.array(obsNext[j][1:-1])
-                            self.__mObsMu.insert(0, obsNextWorld - obsCrntWorld)
+#                            obsCrntTemp = obsCrnt[j][1:]
+                            obsCrntWorld = self.__tfRobot2LandMark(obsCrnt[j][1:])
+#                            obsNextTemp = obsNext[j][1:]
+                            obsNextWorld = self.__tfRobot2LandMark(obsNext[j][1:])
+                            relPose = self.__calcRelativePoseByObservation(obsCrntWorld, obsNextWorld)
+
 
             else:
                 print("なし")
 
             obsNext = obsCrnt
             poseNext = poseCrnt
+
+    def __calcRelativePoseByObservation(self, aOrigin, aTarget):
+        """観測結果による、相対姿勢算出
+        引数：
+            aOrigin：基準ロボット姿勢
+                aOrigin[0]：ユークリッド距離
+                aOrigin[1]：観測方向
+                aOrigin[2]：ランドマーク向き
+            aTarget：目標ロボット姿勢
+                aTarget[0]：ユークリッド距離
+                aTarget[1]：観測方向
+                aTarget[2]：ランドマーク向き
+        返り値：
+            rel：相対ロボット姿勢
+                rel[0, 0]：x座標[m]
+                rel[1, 0]：y座標[m]
+                rel[2, 0]：方角(rad)
+        """
+        px = aTarget[0]*np.cos(aTarget[1]) - aOrigin[0]*np.cos(aOrigin[1])
+        py = aTarget[0]*np.sin(aTarget[1]) - aOrigin[0]*np.sin(aOrigin[1])
+        pt = aTarget[2] - aOrigin[2]
+
+        rel = np.array([[px],
+                        [py],
+                        [pt]])
+        return rel
+
+
+    def __tfRobot2LandMark(self, aLandMark):
+        """ロボット座標系→ランドマーク世界座標系変換
+            ロボットを原点とした座標系からランドマークを原点とした世界座標系に変換し、
+            変換後のロボット姿勢を戻り値として返す。
+        引数：
+            aLandMark：ランドマーク姿勢
+                aLandMark[0]：ユークリッド距離
+                aLandMark[1]：観測方向
+                aLandMark[2]：ランドマーク向き
+        返り値：
+            robot：ランドマークを原点とした世界座標系でのロボット姿勢
+                robot[0]：ユークリッド距離
+                robot[1]：観測方向
+                robot[2]：ランドマーク向き
+        """
+        dist = aLandMark[0]
+        direct = limit.limit_angle(np.pi + aLandMark[1] - aLandMark[2])
+        orient = limit.limit_angle(tf.BASE_ANG - aLandMark[2])
+        robot = [dist, direct, orient]
+        return robot
+
 
     def draw(self, aAx, aAx2):
         self.__mScnSnsr.draw(aAx, "green", self.__mPosesActu[-1])
