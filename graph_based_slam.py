@@ -99,15 +99,6 @@ class ScanSensor(object):
                 orientActu = limit.limit_angle(np.random.normal(orientLm_rad[i], self.__R_ORIENT_SIGMA))
                 obs.append([i, distActu, dirActu, orientActu])
 
-
-#                measR = self.rotateCovariance(self.__R, dirLm_rad[i] - tf.BASE_ANG) # ロボット座標系→計測座標系変換
-#                n = np.random.multivariate_normal([0.0, 0.0, 0.0], measR, 1).T
-#                xp = rlm[0] + n[0, 0]
-#                yp = rlm[1] + n[1, 0]
-#                tp = landMarkTrueDir + n[2, 0]
-
-#                obs.append([i, xp, yp, tp])
-
         return obs
 
     def rotateCovariance(self, aCov, aRad):
@@ -119,6 +110,24 @@ class ScanSensor(object):
                            [0.0, 0.0, 1.0]])
 
         return rotmat @ aCov @ rotmat.T
+
+    def getCovarianceMatrix(self, aObs):
+        """共分散行列取得
+        引数：
+            aOrigin：基準ロボット姿勢
+                aOrigin[0]：ユークリッド距離
+                aOrigin[1]：観測方向
+                aOrigin[2]：ランドマーク向き
+        返り値：
+            covMat：共分散行列
+        """
+        dist = aObs[0] / self.__R_DIST
+        dir_cov = (dist * np.sin(self.__R_DIR_SIGMA)) ** 2
+        orient_cov = self.__R_DIR_SIGMA ** 2 + self.__R_ORIENT_SIGMA ** 2
+        covMat = np.array([[dist ** 2, 0,       0],
+                           [0,         dir_cov, 0],
+                           [0,         0,       orient_cov]])
+        return covMat
 
 
     def draw(self, aAx, aColor, aPose):
@@ -198,25 +207,31 @@ class Robot(object):
                                                                             len(self.__mPosesGues), len(self.__mObs)))
 
         obsNext = []
-        poseNext = []
         for obsCrnt, poseCrnt in zip(reversed(self.__mObs), reversed(self.__mPosesGues)):
             if len(obsCrnt) > 0 and len(obsNext) > 0:
                 for j in range(len(obsCrnt)):
                     for k in range(len(obsNext)):
                         if obsCrnt[j][0] == obsNext[k][0]:
-                            #TODO:バグあり
-#                            obsCrntTemp = obsCrnt[j][1:]
+                            # 観測結果によるエッジ算出
                             obsCrntWorld = self.__tfRobot2LandMark(obsCrnt[j][1:])
-#                            obsNextTemp = obsNext[j][1:]
                             obsNextWorld = self.__tfRobot2LandMark(obsNext[j][1:])
                             relPose = self.__calcRelativePoseByObservation(obsCrntWorld, obsNextWorld)
+                            print("<相対姿勢(LandMark ID:{0})>t[{1:.2f}[m], {2:.2f}[deg], {3:.2f}[deg], t+1[{4:.2f}[m], {5:.2f}[deg], {6:.2f}[deg]], Rel[x={7:.2f}[m], y={8:.2f}[m], t={9:.2f}[deg]]"
+                                  .format(j,
+                                          obsCrntWorld[0], np.rad2deg(obsCrntWorld[1]), np.rad2deg(obsCrntWorld[2]),
+                                          obsNextWorld[0], np.rad2deg(obsNextWorld[1]), np.rad2deg(obsNextWorld[2]),
+                                          relPose[0,0], relPose[1,0], np.rad2deg(relPose[2,0])))
+
+                            # 計測座標系での情報行列算出
+                            obsCovCrnt = self.__mScnSnsr.getCovarianceMatrix(obsCrnt[j][1:])
+                            obsCovNect = self.__mScnSnsr.getCovarianceMatrix(obsNext[j][1:])
+
 
 
             else:
                 print("なし")
 
             obsNext = obsCrnt
-            poseNext = poseCrnt
 
     def __calcRelativePoseByObservation(self, aOrigin, aTarget):
         """観測結果による、相対姿勢算出
