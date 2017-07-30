@@ -70,8 +70,8 @@ class ScanSensor(object):
         """
 #        self.__R = np.diag([aCovPx_m, aCovPy_m, aCovAng_rad]) ** 2
 
-    def scan(self, aPose):
-        """"スキャン結果
+    def scanWithNoise(self, aPose):
+        """"スキャン結果（ノイズ有り）
         引数：
             aPose：姿勢
                aPose[0, 0]：x座標[m]
@@ -149,7 +149,7 @@ class ScanSensor(object):
         返り値：
             covMatWorld：世界座標系での共分散行列(3×3)
         """
-        ang = aLandMarkDir + aRobotDir
+        ang = aLandMarkDir + aRobotDir - tf.BASE_ANG
         c = np.cos(ang)
         s = np.sin(ang)
         rotMat = np.array([[c, -s, 0],
@@ -211,8 +211,8 @@ class Robot(object):
             aDt：演算周期[sec]
         """
         self.__mScnSnsr = ScanSensor(aScanRng, aScanAng, aLandMarks)
-#        self.__mMvMdl = mm.MotionModel(aDt, 0.3, 0.3, 0.3, 0.3, 0.1, 0.1)
-        self.__mMvMdl = mm.MotionModel(aDt, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001)
+#        self.__mMvMdl = mm.MotionModel(aDt, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)
+        self.__mMvMdl = mm.MotionModel(aDt, 0.0000001, 0.0000001, 0.0000001, 0.0000001, 0.0000001, 0.0000001)
 
         #---------- 制御周期 ----------
         self.__mDt = aDt
@@ -223,7 +223,7 @@ class Robot(object):
         #---------- 制御 ----------
         self.__mCtr = []
         #---------- 観測 ----------
-        self.__mObs = []
+        self.__mObsActu = []
 
         self.__mObsMu = []
 
@@ -252,16 +252,16 @@ class Robot(object):
         self.__mCtr.append(np.array([aV, aW]))  # 制御
         self.__mPosesActu.append(poseActu)  # 姿勢（実際値）
         self.__mPosesGues.append(poseGues)  # 姿勢（推定値）
-        self.__mObs.append(self.__mScnSnsr.scan(poseActu))  # 観測結果
+        self.__mObsActu.append(self.__mScnSnsr.scanWithNoise(poseActu))  # 観測結果
 
 
     def estimateOpticalTrajectory(self):
         print("[軌跡推定]Ctr:{0}, PosesActu = {1}, PosesGues = {2}, Obs = {3}".format(len(self.__mCtr), len(self.__mPosesActu),
-                                                                            len(self.__mPosesGues), len(self.__mObs)))
+                                                                            len(self.__mPosesGues), len(self.__mObsActu)))
 
         obsNext = []
         poseNext = []
-        for obsCrnt, poseCrnt in zip(reversed(self.__mObs), reversed(self.__mPosesGues)):
+        for obsCrnt, poseCrnt in zip(reversed(self.__mObsActu), reversed(self.__mPosesGues)):
             if len(obsCrnt) > 0 and len(obsNext) > 0:
                 for j in range(len(obsCrnt)):
                     for k in range(len(obsNext)):
@@ -346,6 +346,7 @@ class Robot(object):
 
         self.__drawPoses(aAx1, "red", "Guess", self.__mPosesGues)
         self.__drawPoses(aAx1, "blue", "Actual", self.__mPosesActu)
+        self.__drawErrorEllipse(aAx1)
 
         self.__debug(aAx2)
 
@@ -364,9 +365,28 @@ class Robot(object):
         pya = [e[1, 0] for e in aPoses]
         aAx.plot(pxa, pya, c = aColor, linewidth = 1.0, linestyle = "-", label = aLabel)
 
+    def __drawErrorEllipse(self, aAx):
+        obs = self.__mObsActu[-1]
+        pose = self.__mPosesActu[-1]
+        if len(obs) != 0:
+            for o in obs:
+                lmCovM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(o[1:])
+                lmCovW = self.__mScnSnsr.tfMeasurement2World(lmCovM, o[2], pose[2, 0])
+                Pxy = lmCovW[0:2, 0:2]
+                x, y, ang_rad = self.__mEllipse.calc_error_ellipse(Pxy)
+
+#                px = (o[1] * np.cos(o[2])) * np.cos(pose[2, 0] - tf.BASE_ANG )  + pose[0, 0]
+#                py = (o[1] * np.sin(o[2])) * np.sin(pose[2, 0] - tf.BASE_ANG )  + pose[1, 0]
+                px = (o[1] * np.cos(o[2] + pose[2, 0] - tf.BASE_ANG)) + pose[0, 0]
+                py = (o[1] * np.sin(o[2] + pose[2, 0] - tf.BASE_ANG)) + pose[1, 0]
+                p = ( px, py )
+                e = patches.Ellipse(p, x, y, angle = np.rad2deg(ang_rad), linewidth = 2, alpha = 0.2,
+                             facecolor = 'yellow', edgecolor = 'black', label = 'Error Ellipse: %.2f[%%]' %
+                             self.__mConfidence_interval)
+                aAx.add_patch(e)
+
     def __debug(self, aAx):
-        obs = self.__mObs[-1]
-        pose = self.__mPosesGues[-1]
+        obs = self.__mObsActu[-1]
         if len(obs) != 0:
             pxa = [e[1] * np.cos(e[2]) for e in obs]
             pya = [e[1] * np.sin(e[2]) for e in obs]
