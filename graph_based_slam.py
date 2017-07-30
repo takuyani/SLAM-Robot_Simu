@@ -324,20 +324,26 @@ class Robot(object):
         aAx.plot(pxa, pya, c = aColor, linewidth = 1.0, linestyle = "-", label = aLabel)
 
     def __debug(self, aAx):
-        a = self.__mObs[-1]
-        if len(a) != 0:
-            pxa = [e[1] for e in a]
-            pya = [e[2] for e in a]
-            pta = [e[3] for e in a]
-            aAx.scatter(pxa, pya, c="red", marker='o', alpha=0.5)
+        obs = self.__mObs[-1]
+        if len(obs) != 0:
+            pxa = [e[1] * np.cos(e[2]) for e in obs]
+            pya = [e[1] * np.sin(e[2]) for e in obs]
+            pta = [e[3] for e in obs]
+            aAx.scatter(pxa, pya, s = 100, c = "red", marker = "*", alpha = 0.5, linewidths = "2",
+                        edgecolors = "red", label = "Land Mark")
 
+            gain = 2
             x = pxa
             y = pya
             # 矢印（ベクトル）の成分
-            u = np.cos(pta)
-            v = np.sin(pta)
+            u = gain * np.cos(pta)
+            v = gain * np.sin(pta)
             # 矢印描写
-            aAx.quiver(x, y, u, v, color = "red", angles = "xy", scale_units = "xy", scale = 1)
+            aAx.quiver(x, y, u, v, color = "red", angles = "xy", scale_units = "xy", scale = 1 )
+
+        # ロボット描写
+        aAx.scatter(0, 0, s = 100, c = "blue", marker = "o", alpha = 0.5, label = "Robot")
+        aAx.quiver(0, 0, 0, 1, color = "blue", angles = "xy", scale_units = "xy", scale = 1)
 
 
 
@@ -399,7 +405,7 @@ def graph_based_slam(i, aPeriod_ms):
 
     ax1.set_xlabel("x [m]")
     ax1.set_ylabel("y [m]")
-    ax1.set_title("Graph-based SLAM")
+    ax1.set_title("World")
     ax1.axis("equal", adjustable = "box")
     ax1.grid()
     ax1.legend(fontsize = 10)
@@ -421,25 +427,21 @@ def graph_based_slam(i, aPeriod_ms):
                     [ 0.0  , cov_y, 0.0  ],
                     [ 0.0  , 0.0  , cov_t]])
 
-    P = np.random.multivariate_normal([0.0, 0.0, 0.0], cov, data_num).T
+#    P = np.random.multivariate_normal([0.0, 0.0, 0.0], cov, data_num).T
+#    scn = ScanSensor(0, 0, LAND_MARKS)
 
-    scn = ScanSensor(0, 0, LAND_MARKS)
-
-    aRad = np.deg2rad(45)
-    cov2 = scn.rotateCovariance(cov, aRad - tf.BASE_ANG)
-
-    P2 = np.random.multivariate_normal([0.0, 0.0, 0.0], cov2, data_num).T
-
-
+#    aRad = np.deg2rad(45)
+#    cov2 = scn.rotateCovariance(cov, aRad - tf.BASE_ANG)
+#    P2 = np.random.multivariate_normal([0.0, 0.0, 0.0], cov2, data_num).T
     # 散布図をプロットす
-    ax2.scatter(P[0], P[1], color='r', marker='x', label="$K_1$")
-    ax2.scatter(P2[0], P2[1], color='b', marker='x', label="$K_1$")
+#    ax2.scatter(P[0], P[1], color='r', marker='x', label="$K_1$")
+#    ax2.scatter(P2[0], P2[1], color='b', marker='x', label="$K_1$")
 
 
 
     ax2.set_xlabel("x [m]")
     ax2.set_ylabel("y [m]")
-    ax2.set_title("Debug")
+    ax2.set_title("Robot")
 #    ax2.axis("equal", adjustable = "box")
     ax2.axis([-15, 15, -15, 15])
     ax2.grid()
