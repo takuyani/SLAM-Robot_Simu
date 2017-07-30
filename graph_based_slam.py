@@ -17,6 +17,7 @@ from mylib import limit
 from mylib import transform as tf
 import motion_model as mm
 from docutils.parsers import null
+from matplotlib import animation, patches
 
 class ScanSensor(object):
     """スキャンセンサclass"""
@@ -49,8 +50,9 @@ class ScanSensor(object):
         self.__local = np.array([self.__p[0],
                                  self.__p[1]])
 
-        #観測雑音定義
-        self.__R_DIST = 10  # ランドマーク距離雑音[%]
+        # 観測雑音定義
+        self.__DIST_NOISE = 10  # ランドマーク距離雑音[%]
+        self.__R_DIST = self.__DIST_NOISE / 100  # ランドマーク距離雑音ゲイン
         self.__R_DIR_SIGMA = 3 * np.pi / 180  # ランドマーク観測方向雑音標準偏差[rad]
         self.__R_ORIENT_SIGMA = 3 * np.pi / 180  # ランドマーク向き雑音標準偏差[rad]
 
@@ -82,11 +84,11 @@ class ScanSensor(object):
 
 #        landMarkTrueDir = limit.limit_angle(tf.BASE_ANG * 2.0 - aPose[2, 0])
 
-        robotLandMarks = tf.world2robot(aPose, self.__mLandMarks) # 世界座標系→ロボット座標系変換
+        robotLandMarks = tf.world2robot(aPose, self.__mLandMarks)  # 世界座標系→ロボット座標系変換
 
         distLm = np.linalg.norm(robotLandMarks, axis = 1)  # ランドマーク距離算出
         dirLm_rad = np.arctan2(robotLandMarks[:, 1], robotLandMarks[:, 0])  # ランドマーク観測方向算出
-        orientLm_rad =  np.ones(robotLandMarks.shape[0]) * (tf.BASE_ANG - aPose[2, 0])  # ランドマーク向き算出
+        orientLm_rad = np.ones(robotLandMarks.shape[0]) * (tf.BASE_ANG - aPose[2, 0])  # ランドマーク向き算出
 
         upperRad = tf.BASE_ANG + self.__mScanAngle_rad
         lowerRad = tf.BASE_ANG - self.__mScanAngle_rad
@@ -94,7 +96,7 @@ class ScanSensor(object):
 
         for i, flg in enumerate(self.__mObsFlg):
             if (flg == True):
-                distActu = np.random.normal(distLm[i], distLm[i] / self.__R_DIST)
+                distActu = np.random.normal(distLm[i], distLm[i] * self.__R_DIST)
                 dirActu = limit.limit_angle(np.random.normal(dirLm_rad[i], self.__R_DIR_SIGMA))
                 orientActu = limit.limit_angle(np.random.normal(orientLm_rad[i], self.__R_ORIENT_SIGMA))
                 obs.append([i, distActu, dirActu, orientActu])
@@ -111,8 +113,8 @@ class ScanSensor(object):
 
         return rotmat @ aCov @ rotmat.T
 
-    def getCovarianceMatrix(self, aPose, aLandMark):
-        """計測座標系における共分散行列取得
+    def getLandMarkCovMatrixOnMeasurementSys(self, aLandMark):
+        """計測座標系におけるランドマークの共分散行列取得
         引数：
             aPose：世界座標系でのロボット姿勢
                aPose[0, 0]：x座標[m]
@@ -123,27 +125,59 @@ class ScanSensor(object):
                 aLandMark[1]：観測方向
                 aLandMark[2]：ランドマーク向き
         返り値：
-            covMatWorld：世界座標系での共分散行列(3×3)
+            covMat：計測座標系での共分散行列(3×3)
+                対角成分
+                1：x軸の共分散
+                2：y軸の共分散
+                3：θ方向の共分散
         """
-        dist = aLandMark[0] / self.__R_DIST
+        dist = aLandMark[0] * self.__R_DIST
         dir_cov = (dist * np.sin(self.__R_DIR_SIGMA)) ** 2
         orient_cov = self.__R_DIR_SIGMA ** 2 + self.__R_ORIENT_SIGMA ** 2
-        covMat = np.array([[dist ** 2, 0,       0         ],
-                           [0,         dir_cov, 0         ],
-                           [0,         0,       orient_cov]])
+        covMat = np.array([[dist ** 2, 0, 0         ],
+                           [0, dir_cov, 0         ],
+                           [0, 0, orient_cov]])
 
-        # 計測座標系→世界座標系変換
-        ang = aPose[2,0] + aLandMark[1]
+        return covMat
+
+    def tfMeasurement2World(self, aCovMat, aLandMarkDir, aRobotDir):
+        """計測座標系→世界座標系変換
+        引数：
+            aCovMat：共分散行列
+            aLandMarkDir：ロボット座標系でのランドマーク観測方向[rad]
+            aRobotDir：世界座標系でのロボット方角[rad]
+        返り値：
+            covMatWorld：世界座標系での共分散行列(3×3)
+        """
+        ang = aLandMarkDir + aRobotDir
         c = np.cos(ang)
         s = np.sin(ang)
-        rotMat = np.array([[ c, s, 0],
-                           [-s, c, 0],
-                           [ 0, 0, 1]])
+        rotMat = np.array([[c, -s, 0],
+                           [s,  c, 0],
+                           [0,  0, 1]])
 
-        covMatWorld = rotMat @ covMat @ rotMat.T
+        covMatWorld = rotMat @ aCovMat @ rotMat.T
 
         return covMatWorld
 
+
+    def tfMeasurement2Robot(self, aCovMat, aLandMarkDir):
+        """計測座標系→ロボット座標系変換
+        引数：
+            aCovMat：共分散行列
+            aLandMarkDir：ロボット座標系でのランドマーク観測方向[rad]
+        返り値：
+            covMatRobot：ロボット座標系での共分散行列(3×3)
+        """
+        c = np.cos(aLandMarkDir)
+        s = np.sin(aLandMarkDir)
+        rotMat = np.array([[c, -s, 0],
+                           [s,  c, 0],
+                           [0,  0, 1]])
+
+        covMatRobot = rotMat @ aCovMat @ rotMat.T
+
+        return covMatRobot
 
     def draw(self, aAx, aColor, aPose):
         """"描写
@@ -193,6 +227,10 @@ class Robot(object):
 
         self.__mObsMu = []
 
+        # 誤差楕円の信頼区間[%]
+        self.__mConfidence_interval = 99.0
+        self.__mEllipse = error_ellipse.ErrorEllipse(self.__mConfidence_interval)
+
 
     def getPose(self):
         """"姿勢取得処理
@@ -212,8 +250,8 @@ class Robot(object):
 
         # 履歴保持
         self.__mCtr.append(np.array([aV, aW]))  # 制御
-        self.__mPosesActu.append(poseActu)      # 姿勢（実際値）
-        self.__mPosesGues.append(poseGues)      # 姿勢（推定値）
+        self.__mPosesActu.append(poseActu)  # 姿勢（実際値）
+        self.__mPosesGues.append(poseGues)  # 姿勢（推定値）
         self.__mObs.append(self.__mScnSnsr.scan(poseActu))  # 観測結果
 
 
@@ -235,15 +273,18 @@ class Robot(object):
                             lmCrntWorld = self.__tfRobot2LandMark(lmCrnt)
                             lmNextWorld = self.__tfRobot2LandMark(lmNext)
                             relPose = self.__calcRelativePoseByObservation(lmCrntWorld, lmNextWorld)
-                            print("<相対姿勢(LandMark ID:{0})>t[{1:.2f}[m], {2:.2f}[deg], {3:.2f}[deg], t+1[{4:.2f}[m], {5:.2f}[deg], {6:.2f}[deg]], Rel[x={7:.2f}[m], y={8:.2f}[m], t={9:.2f}[deg]]"
+                            print("<相対姿勢>(LandMark ID:{0})>t[{1:.2f}[m], {2:.2f}[deg], {3:.2f}[deg], t+1[{4:.2f}[m], {5:.2f}[deg], {6:.2f}[deg]], Rel[x={7:.2f}[m], y={8:.2f}[m], t={9:.2f}[deg]]"
                                   .format(j,
                                           lmCrntWorld[0], np.rad2deg(lmCrntWorld[1]), np.rad2deg(lmCrntWorld[2]),
                                           lmNextWorld[0], np.rad2deg(lmNextWorld[1]), np.rad2deg(lmNextWorld[2]),
-                                          relPose[0,0], relPose[1,0], np.rad2deg(relPose[2,0])))
+                                          relPose[0, 0], relPose[1, 0], np.rad2deg(relPose[2, 0])))
 
                             # 計測座標系での情報行列算出
-                            lmCovCrntW = self.__mScnSnsr.getCovarianceMatrix(poseCrnt, lmCrnt)
-                            lmCovNectW = self.__mScnSnsr.getCovarianceMatrix(poseNext, lmNext)
+                            lmCovCrntM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(lmCrnt)
+                            lmCovCrntW = self.__mScnSnsr.tfMeasurement2World(lmCovCrntM, lmCrnt[1], poseCrnt[2, 0])
+
+                            lmCovNextM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(lmNext)
+                            lmCovNextW = self.__mScnSnsr.tfMeasurement2World(lmCovNextM, lmNext[1], poseNext[2, 0])
 
             else:
                 print("なし")
@@ -268,8 +309,8 @@ class Robot(object):
                 rel[1, 0]：y座標[m]
                 rel[2, 0]：方角(rad)
         """
-        px = aTarget[0]*np.cos(aTarget[1]) - aOrigin[0]*np.cos(aOrigin[1])
-        py = aTarget[0]*np.sin(aTarget[1]) - aOrigin[0]*np.sin(aOrigin[1])
+        px = aTarget[0] * np.cos(aTarget[1]) - aOrigin[0] * np.cos(aOrigin[1])
+        py = aTarget[0] * np.sin(aTarget[1]) - aOrigin[0] * np.sin(aOrigin[1])
         pt = aTarget[2] - aOrigin[2]
 
         rel = np.array([[px],
@@ -300,11 +341,11 @@ class Robot(object):
         return robot
 
 
-    def draw(self, aAx, aAx2):
-        self.__mScnSnsr.draw(aAx, "green", self.__mPosesActu[-1])
+    def draw(self, aAx1, aAx2):
+        self.__mScnSnsr.draw(aAx1, "green", self.__mPosesActu[-1])
 
-        self.__drawPoses(aAx, "red", "Guess", self.__mPosesGues)
-        self.__drawPoses(aAx, "blue", "Actual", self.__mPosesActu)
+        self.__drawPoses(aAx1, "red", "Guess", self.__mPosesGues)
+        self.__drawPoses(aAx1, "blue", "Actual", self.__mPosesActu)
 
         self.__debug(aAx2)
 
@@ -325,10 +366,12 @@ class Robot(object):
 
     def __debug(self, aAx):
         obs = self.__mObs[-1]
+        pose = self.__mPosesGues[-1]
         if len(obs) != 0:
             pxa = [e[1] * np.cos(e[2]) for e in obs]
             pya = [e[1] * np.sin(e[2]) for e in obs]
             pta = [e[3] for e in obs]
+            # ランドマーク描写
             aAx.scatter(pxa, pya, s = 100, c = "red", marker = "*", alpha = 0.5, linewidths = "2",
                         edgecolors = "red", label = "Land Mark")
 
@@ -339,7 +382,18 @@ class Robot(object):
             u = gain * np.cos(pta)
             v = gain * np.sin(pta)
             # 矢印描写
-            aAx.quiver(x, y, u, v, color = "red", angles = "xy", scale_units = "xy", scale = 1 )
+            aAx.quiver(x, y, u, v, color = "red", angles = "xy", scale_units = "xy", scale = 1)
+
+            for o in obs:
+                lmCovM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(o[1:])
+                lmCovR = self.__mScnSnsr.tfMeasurement2Robot(lmCovM, o[2])
+                Pxy = lmCovR[0:2, 0:2]
+                x, y, ang_rad = self.__mEllipse.calc_error_ellipse(Pxy)
+                p = ( o[1] * np.cos(o[2]), o[1] * np.sin(o[2]) )
+                e = patches.Ellipse(p, x, y, angle = np.rad2deg(ang_rad), linewidth = 2, alpha = 0.2,
+                             facecolor = 'yellow', edgecolor = 'black', label = 'Error Ellipse: %.2f[%%]' %
+                             self.__mConfidence_interval)
+                aAx.add_patch(e)
 
         # ロボット描写
         aAx.scatter(0, 0, s = 100, c = "blue", marker = "o", alpha = 0.5, label = "Robot")
