@@ -111,23 +111,38 @@ class ScanSensor(object):
 
         return rotmat @ aCov @ rotmat.T
 
-    def getCovarianceMatrix(self, aObs):
-        """共分散行列取得
+    def getCovarianceMatrix(self, aPose, aLandMark):
+        """計測座標系における共分散行列取得
         引数：
-            aOrigin：基準ロボット姿勢
-                aOrigin[0]：ユークリッド距離
-                aOrigin[1]：観測方向
-                aOrigin[2]：ランドマーク向き
+            aPose：世界座標系でのロボット姿勢
+               aPose[0, 0]：x座標[m]
+               aPose[1, 0]：y座標[m]
+               aPose[2, 0]：方角(rad)
+            aLandMark：計測座標家でのランドマーク姿勢
+                aLandMark[0]：ユークリッド距離
+                aLandMark[1]：観測方向
+                aLandMark[2]：ランドマーク向き
         返り値：
-            covMat：共分散行列
+            covMatWorld：世界座標系での共分散行列(3×3)
         """
-        dist = aObs[0] / self.__R_DIST
+        dist = aLandMark[0] / self.__R_DIST
         dir_cov = (dist * np.sin(self.__R_DIR_SIGMA)) ** 2
         orient_cov = self.__R_DIR_SIGMA ** 2 + self.__R_ORIENT_SIGMA ** 2
-        covMat = np.array([[dist ** 2, 0,       0],
-                           [0,         dir_cov, 0],
+        covMat = np.array([[dist ** 2, 0,       0         ],
+                           [0,         dir_cov, 0         ],
                            [0,         0,       orient_cov]])
-        return covMat
+
+        # 計測座標系→世界座標系変換
+        ang = aPose[2,0] + aLandMark[1]
+        c = np.cos(ang)
+        s = np.sin(ang)
+        rotMat = np.array([[ c, s, 0],
+                           [-s, c, 0],
+                           [ 0, 0, 1]])
+
+        covMatWorld = rotMat @ covMat @ rotMat.T
+
+        return covMatWorld
 
 
     def draw(self, aAx, aColor, aPose):
@@ -207,31 +222,34 @@ class Robot(object):
                                                                             len(self.__mPosesGues), len(self.__mObs)))
 
         obsNext = []
+        poseNext = []
         for obsCrnt, poseCrnt in zip(reversed(self.__mObs), reversed(self.__mPosesGues)):
             if len(obsCrnt) > 0 and len(obsNext) > 0:
                 for j in range(len(obsCrnt)):
                     for k in range(len(obsNext)):
                         if obsCrnt[j][0] == obsNext[k][0]:
+                            lmCrnt = obsCrnt[j][1:]
+                            lmNext = obsNext[j][1:]
+
                             # 観測結果によるエッジ算出
-                            obsCrntWorld = self.__tfRobot2LandMark(obsCrnt[j][1:])
-                            obsNextWorld = self.__tfRobot2LandMark(obsNext[j][1:])
-                            relPose = self.__calcRelativePoseByObservation(obsCrntWorld, obsNextWorld)
+                            lmCrntWorld = self.__tfRobot2LandMark(lmCrnt)
+                            lmNextWorld = self.__tfRobot2LandMark(lmNext)
+                            relPose = self.__calcRelativePoseByObservation(lmCrntWorld, lmNextWorld)
                             print("<相対姿勢(LandMark ID:{0})>t[{1:.2f}[m], {2:.2f}[deg], {3:.2f}[deg], t+1[{4:.2f}[m], {5:.2f}[deg], {6:.2f}[deg]], Rel[x={7:.2f}[m], y={8:.2f}[m], t={9:.2f}[deg]]"
                                   .format(j,
-                                          obsCrntWorld[0], np.rad2deg(obsCrntWorld[1]), np.rad2deg(obsCrntWorld[2]),
-                                          obsNextWorld[0], np.rad2deg(obsNextWorld[1]), np.rad2deg(obsNextWorld[2]),
+                                          lmCrntWorld[0], np.rad2deg(lmCrntWorld[1]), np.rad2deg(lmCrntWorld[2]),
+                                          lmNextWorld[0], np.rad2deg(lmNextWorld[1]), np.rad2deg(lmNextWorld[2]),
                                           relPose[0,0], relPose[1,0], np.rad2deg(relPose[2,0])))
 
                             # 計測座標系での情報行列算出
-                            obsCovCrnt = self.__mScnSnsr.getCovarianceMatrix(obsCrnt[j][1:])
-                            obsCovNect = self.__mScnSnsr.getCovarianceMatrix(obsNext[j][1:])
-
-
+                            lmCovCrntW = self.__mScnSnsr.getCovarianceMatrix(poseCrnt, lmCrnt)
+                            lmCovNectW = self.__mScnSnsr.getCovarianceMatrix(poseNext, lmNext)
 
             else:
                 print("なし")
 
             obsNext = obsCrnt
+            poseNext = poseCrnt
 
     def __calcRelativePoseByObservation(self, aOrigin, aTarget):
         """観測結果による、相対姿勢算出
