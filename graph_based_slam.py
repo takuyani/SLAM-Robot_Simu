@@ -70,8 +70,8 @@ class ScanSensor(object):
         """
 #        self.__R = np.diag([aCovPx_m, aCovPy_m, aCovAng_rad]) ** 2
 
-    def scanWithNoise(self, aPose):
-        """"スキャン結果（ノイズ有り）
+    def scan(self, aPose):
+        """"スキャン結果
         引数：
             aPose：姿勢
                aPose[0, 0]：x座標[m]
@@ -80,12 +80,9 @@ class ScanSensor(object):
         返り値：
            なし
         """
-        obs = []
-
-#        landMarkTrueDir = limit.limit_angle(tf.BASE_ANG * 2.0 - aPose[2, 0])
-
+        obsWithNoise = []
+        obsWithoutNoise = []
         robotLandMarks = tf.world2robot(aPose, self.__mLandMarks)  # 世界座標系→ロボット座標系変換
-
         distLm = np.linalg.norm(robotLandMarks, axis = 1)  # ランドマーク距離算出
         dirLm_rad = np.arctan2(robotLandMarks[:, 1], robotLandMarks[:, 0])  # ランドマーク観測方向算出
         orientLm_rad = np.ones(robotLandMarks.shape[0]) * (tf.BASE_ANG - aPose[2, 0])  # ランドマーク向き算出
@@ -99,9 +96,10 @@ class ScanSensor(object):
                 distActu = np.random.normal(distLm[i], distLm[i] * self.__R_DIST)
                 dirActu = limit.limit_angle(np.random.normal(dirLm_rad[i], self.__R_DIR_SIGMA))
                 orientActu = limit.limit_angle(np.random.normal(orientLm_rad[i], self.__R_ORIENT_SIGMA))
-                obs.append([i, distActu, dirActu, orientActu])
+                obsWithNoise.append([i, [distActu, dirActu, orientActu]])
+                obsWithoutNoise.append([i, [distLm[i], dirLm_rad[i], orientLm_rad[i]]])
 
-        return obs
+        return obsWithNoise, obsWithoutNoise
 
     def rotateCovariance(self, aCov, aRad):
         c = np.cos(aRad)
@@ -132,7 +130,7 @@ class ScanSensor(object):
                 3：θ方向の共分散
         """
         dist = aLandMark[0] * self.__R_DIST
-        dir_cov = (dist * np.sin(self.__R_DIR_SIGMA)) ** 2
+        dir_cov = (aLandMark[0] * np.sin(self.__R_DIR_SIGMA)) ** 2
         orient_cov = self.__R_DIR_SIGMA ** 2 + self.__R_ORIENT_SIGMA ** 2
         covMat = np.array([[dist ** 2, 0, 0         ],
                            [0, dir_cov, 0         ],
@@ -191,10 +189,7 @@ class ScanSensor(object):
         aAx.plot(world.T[0], world.T[1], c = aColor, linewidth = 1.0, linestyle = "-")
 
         # ランドマークの描写
-        actLM = np.array([ self.__mLandMarks[i] for i in range(len(self.__mObsFlg))  if self.__mObsFlg[i] == True  ])
-        aAx.scatter(self.__mLandMarks[:, 0], self.__mLandMarks[:, 1], s = 100, c = "yellow", marker = "*", alpha = 0.5, linewidths = "2", edgecolors = "orange", label = "Land Mark")
-        if len(actLM) != 0:
-            aAx.scatter(actLM[:, 0], actLM[:, 1], s = 100, c = "red", marker = "*", alpha = 0.5, linewidths = "2", edgecolors = "red", label = "Land Mark")
+        aAx.scatter(self.__mLandMarks[:, 0], self.__mLandMarks[:, 1], s = 100, c = "yellow", marker = "*", alpha = 0.5, linewidths = "2", edgecolors = "orange", label = "Land Mark(True)")
 
 
 
@@ -224,8 +219,7 @@ class Robot(object):
         self.__mCtr = []
         #---------- 観測 ----------
         self.__mObsActu = []
-
-        self.__mObsMu = []
+        self.__mObsTrue = []
 
         # 誤差楕円の信頼区間[%]
         self.__mConfidence_interval = 99.0
@@ -252,7 +246,10 @@ class Robot(object):
         self.__mCtr.append(np.array([aV, aW]))  # 制御
         self.__mPosesActu.append(poseActu)  # 姿勢（実際値）
         self.__mPosesGues.append(poseGues)  # 姿勢（推定値）
-        self.__mObsActu.append(self.__mScnSnsr.scanWithNoise(poseActu))  # 観測結果
+
+        obsWithNoise, obsWithoutNoise = self.__mScnSnsr.scan(poseActu)
+        self.__mObsActu.append(obsWithNoise)  # 観測結果
+        self.__mObsTrue.append(obsWithoutNoise)  # 観測結果
 
 
     def estimateOpticalTrajectory(self):
@@ -266,8 +263,8 @@ class Robot(object):
                 for j in range(len(obsCrnt)):
                     for k in range(len(obsNext)):
                         if obsCrnt[j][0] == obsNext[k][0]:
-                            lmCrnt = obsCrnt[j][1:]
-                            lmNext = obsNext[j][1:]
+                            lmCrnt = obsCrnt[j][1]
+                            lmNext = obsNext[j][1]
 
                             # 観測結果によるエッジ算出
                             lmCrntWorld = self.__tfRobot2LandMark(lmCrnt)
@@ -346,7 +343,7 @@ class Robot(object):
 
         self.__drawPoses(aAx1, "red", "Guess", self.__mPosesGues)
         self.__drawPoses(aAx1, "blue", "Actual", self.__mPosesActu)
-        self.__drawErrorEllipse(aAx1)
+        self.__drawActualLandMark(aAx1)
 
         self.__debug(aAx2)
 
@@ -365,37 +362,64 @@ class Robot(object):
         pya = [e[1, 0] for e in aPoses]
         aAx.plot(pxa, pya, c = aColor, linewidth = 1.0, linestyle = "-", label = aLabel)
 
-    def __drawErrorEllipse(self, aAx):
-        obs = self.__mObsActu[-1]
-        pose = self.__mPosesActu[-1]
-        if len(obs) != 0:
-            for o in obs:
-                lmCovM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(o[1:])
-                lmCovW = self.__mScnSnsr.tfMeasurement2World(lmCovM, o[2], pose[2, 0])
+    def __drawActualLandMark(self, aAx):
+        obsCrnt = self.__mObsActu[-1]
+        poseCrnt = self.__mPosesActu[-1]
+        if len(obsCrnt) != 0:
+            for obs in obsCrnt:
+                obsPose = obs[1]
+                lmCovM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPose)
+                lmCovW = self.__mScnSnsr.tfMeasurement2World(lmCovM, obsPose[1], poseCrnt[2, 0])
                 Pxy = lmCovW[0:2, 0:2]
                 x, y, ang_rad = self.__mEllipse.calc_error_ellipse(Pxy)
-
-#                px = (o[1] * np.cos(o[2])) * np.cos(pose[2, 0] - tf.BASE_ANG )  + pose[0, 0]
-#                py = (o[1] * np.sin(o[2])) * np.sin(pose[2, 0] - tf.BASE_ANG )  + pose[1, 0]
-                px = (o[1] * np.cos(o[2] + pose[2, 0] - tf.BASE_ANG)) + pose[0, 0]
-                py = (o[1] * np.sin(o[2] + pose[2, 0] - tf.BASE_ANG)) + pose[1, 0]
+                px = (obsPose[0] * np.cos(obsPose[1] + poseCrnt[2, 0] - tf.BASE_ANG)) + poseCrnt[0, 0]
+                py = (obsPose[0] * np.sin(obsPose[1] + poseCrnt[2, 0] - tf.BASE_ANG)) + poseCrnt[1, 0]
                 p = ( px, py )
+                # 誤差楕円描写
                 e = patches.Ellipse(p, x, y, angle = np.rad2deg(ang_rad), linewidth = 2, alpha = 0.2,
                              facecolor = 'yellow', edgecolor = 'black', label = 'Error Ellipse: %.2f[%%]' %
                              self.__mConfidence_interval)
                 aAx.add_patch(e)
+                # 実測ランドマーク描写
+                aAx.scatter(px, py, s = 100, c = "red", marker = "*", alpha = 0.5, linewidths = "2", edgecolors = "red", label = "Land Mark(Actual)")
+
+                # ロボット-ランドマーク間線分描写
+                ps = poseCrnt[0:2, 0].T
+                xl = np.array([ps[0], px])
+                yl = np.array([ps[1], py])
+                aAx.plot(xl, yl, '--', c='green')
+
 
     def __debug(self, aAx):
-        obs = self.__mObsActu[-1]
-        if len(obs) != 0:
-            pxa = [e[1] * np.cos(e[2]) for e in obs]
-            pya = [e[1] * np.sin(e[2]) for e in obs]
-            pta = [e[3] for e in obs]
+
+        gain = 2
+
+        obsCrnt = self.__mObsTrue[-1]
+        if len(obsCrnt) != 0:
+            pxa = [obs[1][0] * np.cos(obs[1][1]) for obs in obsCrnt]
+            pya = [obs[1][0] * np.sin(obs[1][1]) for obs in obsCrnt]
+            pta = [obs[1][2] for obs in obsCrnt]
+            # ランドマーク描写
+            aAx.scatter(pxa, pya, s = 100, c = "yellow", marker = "*", alpha = 0.5, linewidths = "2",
+                        edgecolors = "orange", label = "Land Mark(True)")
+            x = pxa
+            y = pya
+            # 矢印（ベクトル）の成分
+            u = gain * np.cos(pta)
+            v = gain * np.sin(pta)
+            # 矢印描写
+            aAx.quiver(x, y, u, v, color = "orange", angles = "xy", scale_units = "xy", scale = 1)
+
+
+        obsCrnt = self.__mObsActu[-1]
+        if len(obsCrnt) != 0:
+            pxa = [obs[1][0] * np.cos(obs[1][1]) for obs in obsCrnt]
+            pya = [obs[1][0] * np.sin(obs[1][1]) for obs in obsCrnt]
+            pta = [obs[1][2] for obs in obsCrnt]
             # ランドマーク描写
             aAx.scatter(pxa, pya, s = 100, c = "red", marker = "*", alpha = 0.5, linewidths = "2",
-                        edgecolors = "red", label = "Land Mark")
+                        edgecolors = "red", label = "Land Mark(Actual)")
 
-            gain = 2
             x = pxa
             y = pya
             # 矢印（ベクトル）の成分
@@ -404,16 +428,22 @@ class Robot(object):
             # 矢印描写
             aAx.quiver(x, y, u, v, color = "red", angles = "xy", scale_units = "xy", scale = 1)
 
-            for o in obs:
-                lmCovM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(o[1:])
-                lmCovR = self.__mScnSnsr.tfMeasurement2Robot(lmCovM, o[2])
+            for obs in obsCrnt:
+                obsPose = obs[1]
+                lmCovM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPose)
+                lmCovR = self.__mScnSnsr.tfMeasurement2Robot(lmCovM, obsPose[1])
                 Pxy = lmCovR[0:2, 0:2]
                 x, y, ang_rad = self.__mEllipse.calc_error_ellipse(Pxy)
-                p = ( o[1] * np.cos(o[2]), o[1] * np.sin(o[2]) )
-                e = patches.Ellipse(p, x, y, angle = np.rad2deg(ang_rad), linewidth = 2, alpha = 0.2,
+                p = ( obsPose[0] * np.cos(obsPose[1]), obsPose[0] * np.sin(obsPose[1]) )
+                ell = patches.Ellipse(p, x, y, angle = np.rad2deg(ang_rad), linewidth = 2, alpha = 0.2,
                              facecolor = 'yellow', edgecolor = 'black', label = 'Error Ellipse: %.2f[%%]' %
                              self.__mConfidence_interval)
-                aAx.add_patch(e)
+                aAx.add_patch(ell)
+
+                # ロボット-ランドマーク間線分描写
+                xl = np.array([0, p[0]])
+                yl = np.array([0, p[1]])
+                aAx.plot(xl, yl, '--', c='green')
 
         # ロボット描写
         aAx.scatter(0, 0, s = 100, c = "blue", marker = "o", alpha = 0.5, label = "Robot")
@@ -438,7 +468,7 @@ LAND_MARKS = np.array([[ 0.0, 10.0],
                        [ 0.0, 0.0]])
 
 # アニメーション更新周期[msec]
-PERIOD_ms = 1000
+PERIOD_ms = 100
 
 x_base = np.array([[10.0],  # x座標[m]
                    [ 0.0],  # y座標[m]
