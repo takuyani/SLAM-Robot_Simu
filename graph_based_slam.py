@@ -51,24 +51,15 @@ class ScanSensor(object):
                                  self.__p[1]])
 
         # 観測雑音定義
-        self.__DIST_NOISE = 10  # ランドマーク距離雑音[%]
+#        self.__DIST_NOISE = 10  # ランドマーク距離雑音[%]
+#        self.__R_DIST = self.__DIST_NOISE / 100  # ランドマーク距離雑音ゲイン
+#        self.__R_DIR_SIGMA = 3 * np.pi / 180  # ランドマーク観測方向雑音標準偏差[rad]
+#        self.__R_ORIENT_SIGMA = 3 * np.pi / 180  # ランドマーク向き雑音標準偏差[rad]
+        self.__DIST_NOISE = 0.001  # ランドマーク距離雑音[%]
         self.__R_DIST = self.__DIST_NOISE / 100  # ランドマーク距離雑音ゲイン
-        self.__R_DIR_SIGMA = 3 * np.pi / 180  # ランドマーク観測方向雑音標準偏差[rad]
-        self.__R_ORIENT_SIGMA = 3 * np.pi / 180  # ランドマーク向き雑音標準偏差[rad]
+        self.__R_DIR_SIGMA = 0.0000001  # ランドマーク観測方向雑音標準偏差[rad]
+        self.__R_ORIENT_SIGMA = 0.0000001  # ランドマーク向き雑音標準偏差[rad]
 
-#        self.__R = np.diag([0.001, 0.001, 0.001]) ** 2
-
-
-#    def setNoiseParameter(self, aCovPx_m, aCovPy_m, aCovAng_rad):
-        """"観測雑音パラメータ設定
-        引数：
-            aCovPx_m：x方向[m]の標準偏差
-            aCovPy_m：y方向[m]の標準偏差
-            aCovAng_rad：方向[rad]の標準偏差
-        返り値：
-           なし
-        """
-#        self.__R = np.diag([aCovPx_m, aCovPy_m, aCovAng_rad]) ** 2
 
     def scan(self, aPose):
         """"スキャン結果
@@ -222,6 +213,7 @@ class Robot(object):
         self.__mObsTrue = [[]]
 
         #---------- 情報行列 ----------
+        self.__mErr = [[]]
         self.__mInfoMat = [[]]
 
 
@@ -260,69 +252,94 @@ class Robot(object):
         print("[軌跡推定]Ctr:{0}, PosesActu = {1}, PosesGues = {2}, Obs = {3}".format(len(self.__mCtr), len(self.__mPosesActu),
                                                                             len(self.__mPosesGues), len(self.__mObsActu)))
 
-        obsNext = []
-        poseNext = []
+        obsPrev = []
+        posePrev = []
         self.__mInfoMat = []
-        for obsCrnt, poseCrnt in zip(reversed(self.__mObsActu), reversed(self.__mPosesGues)):
+        self.__mErr = []
+        for obsCrnt, poseCrnt in zip(self.__mObsActu, self.__mPosesGues):
             infoMat = []
-            if len(obsCrnt) > 0 and len(obsNext) > 0:
-                for j in range(len(obsCrnt)):
-                    for k in range(len(obsNext)):
-                        if obsCrnt[j][0] == obsNext[k][0]:
-                            obsPoseCrnt = obsCrnt[j][1]
-                            obsPoseNext = obsNext[k][1]
+            err = []
+            if len(obsCrnt) > 0 and len(obsPrev) > 0:
 
-                            # 観測結果によるエッジ算出
+                # ロボット推定姿勢によるエッジ(相対姿勢)算出
+                relPoseRbt = self.__calcRelativePoseByRobotPose(poseCrnt, posePrev)
+
+                for j in range(len(obsCrnt)):
+                    for k in range(len(obsPrev)):
+                        if obsCrnt[j][0] == obsPrev[k][0]:
+                            obsPoseCrnt = obsCrnt[j][1]
+                            obsPosePrev = obsPrev[k][1]
+
+                            # 観測結果によるエッジ(相対姿勢)算出
                             lmCrntWorld = self.__tfRobot2LandMark(obsPoseCrnt)
-                            lmNextWorld = self.__tfRobot2LandMark(obsPoseNext)
-                            relPose = self.__calcRelativePoseByObservation(lmCrntWorld, lmNextWorld)
-                            print("<相対姿勢>(LandMark ID:{0})>t[{1:.2f}[m], {2:.2f}[deg], {3:.2f}[deg], t+1[{4:.2f}[m], {5:.2f}[deg], {6:.2f}[deg]], Rel[x={7:.2f}[m], y={8:.2f}[m], t={9:.2f}[deg]]"
-                                  .format(j,
-                                          lmCrntWorld[0], np.rad2deg(lmCrntWorld[1]), np.rad2deg(lmCrntWorld[2]),
-                                          lmNextWorld[0], np.rad2deg(lmNextWorld[1]), np.rad2deg(lmNextWorld[2]),
-                                          relPose[0, 0], relPose[1, 0], np.rad2deg(relPose[2, 0])))
+                            lmPrevWorld = self.__tfRobot2LandMark(obsPosePrev)
+                            relPoseObs = self.__calcRelativePoseByObservation(lmCrntWorld, lmPrevWorld)
+
+                            # 姿勢誤差算出
+                            e = relPoseRbt - relPoseObs
+                            err.append(obsCrnt[j][0], e)
 
                             # 計測座標系での情報行列算出
                             lmCovCrntM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPoseCrnt)
                             lmCovCrntW = self.__mScnSnsr.tfMeasurement2World(lmCovCrntM, obsPoseCrnt[1], poseCrnt[2, 0])
-
-                            lmCovNextM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPoseNext)
-                            lmCovNextW = self.__mScnSnsr.tfMeasurement2World(lmCovNextM, obsPoseNext[1], poseNext[2, 0])
-
-                            infoMat = (obsCrnt[j][0], np.linalg.inv(lmCovCrntW + lmCovNextW))
+                            lmCovPrevM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPosePrev)
+                            lmCovPrevW = self.__mScnSnsr.tfMeasurement2World(lmCovPrevM, obsPosePrev[1], posePrev[2, 0])
+                            infoMat.append(obsCrnt[j][0], np.linalg.inv(lmCovCrntW + lmCovPrevW))
 
             else:
                 print("なし")
 
-            obsNext = obsCrnt
-            poseNext = poseCrnt
-            self.__mInfoMat.insert(-1, infoMat)
+            obsPrev = obsCrnt
+            posePrev = poseCrnt
+            self.__mInfoMat.append(infoMat)
+            self.__mErr.append(err)
 
 
-    def __calcRelativePoseByObservation(self, aOrigin, aTarget):
+    def __calcRelativePoseByObservation(self, aObsPoseCrnt, aObsPosePrev):
         """観測結果による、相対姿勢算出
         引数：
-            aOrigin：基準ロボット姿勢
-                aOrigin[0]：ユークリッド距離
-                aOrigin[1]：観測方向
-                aOrigin[2]：ランドマーク向き
-            aTarget：目標ロボット姿勢
-                aTarget[0]：ユークリッド距離
-                aTarget[1]：観測方向
-                aTarget[2]：ランドマーク向き
+            aObsPoseCrnt：ロボット現在姿勢
+                aObsPoseCrnt[0]：ユークリッド距離
+                aObsPoseCrnt[1]：観測方向
+                aObsPoseCrnt[2]：ランドマーク向き
+            aObsPosePrev：ロボット過去姿勢
+                aObsPosePrev[0]：ユークリッド距離
+                aObsPosePrev[1]：観測方向
+                aObsPosePrev[2]：ランドマーク向き
         返り値：
             rel：相対ロボット姿勢
                 rel[0, 0]：x座標[m]
                 rel[1, 0]：y座標[m]
                 rel[2, 0]：方角(rad)
         """
-        px = aTarget[0] * np.cos(aTarget[1]) - aOrigin[0] * np.cos(aOrigin[1])
-        py = aTarget[0] * np.sin(aTarget[1]) - aOrigin[0] * np.sin(aOrigin[1])
-        pt = aTarget[2] - aOrigin[2]
+        px = aObsPoseCrnt[0] * np.cos(aObsPoseCrnt[1]) - aObsPosePrev[0] * np.cos(aObsPosePrev[1])
+        py = aObsPoseCrnt[0] * np.sin(aObsPoseCrnt[1]) - aObsPosePrev[0] * np.sin(aObsPosePrev[1])
+        pt = aObsPoseCrnt[2] - aObsPosePrev[2]
 
         rel = np.array([[px],
                         [py],
                         [pt]])
+        return rel
+
+    def __calcRelativePoseByRobotPose(self, aPoseCrnt, aPosePrev):
+        """ロボットの推定姿勢による、相対姿勢算出
+        引数：
+            aPoseCrnt：ロボット現在姿勢
+                aPoseCrnt[0, 0]：x座標[m]
+                aPoseCrnt[1, 0]：y座標[m]
+                aPoseCrnt[2, 0]：方角(rad)
+            aPosePrev：ロボット過去姿勢
+                aPoseCrnt[0, 0]：x座標[m]
+                aPoseCrnt[1, 0]：y座標[m]
+                aPoseCrnt[2, 0]：方角(rad)
+        返り値：
+            rel：相対ロボット姿勢
+                rel[0, 0]：x座標[m]
+                rel[1, 0]：y座標[m]
+                rel[2, 0]：方角(rad)
+        """
+        rel = aPoseCrnt - aPosePrev
+
         return rel
 
 
@@ -525,51 +542,12 @@ def graph_based_slam(i, aPeriod_ms):
     ax1.legend(fontsize = 10)
 
 
-
-
-    # データ数
-    data_num = 1000
-
-    # 平均
-    mu = np.array([[0.0],
-                   [0.0]])
-    # 共分散
-    cov_x = 8.00
-    cov_y = 1.00
-    cov_t = 1.0
-    cov = np.array([[ cov_x, 0.0  , 0.0  ],
-                    [ 0.0  , cov_y, 0.0  ],
-                    [ 0.0  , 0.0  , cov_t]])
-
-#    P = np.random.multivariate_normal([0.0, 0.0, 0.0], cov, data_num).T
-#    scn = ScanSensor(0, 0, LAND_MARKS)
-
-#    aRad = np.deg2rad(45)
-#    cov2 = scn.rotateCovariance(cov, aRad - tf.BASE_ANG)
-#    P2 = np.random.multivariate_normal([0.0, 0.0, 0.0], cov2, data_num).T
-    # 散布図をプロットす
-#    ax2.scatter(P[0], P[1], color='r', marker='x', label="$K_1$")
-#    ax2.scatter(P2[0], P2[1], color='b', marker='x', label="$K_1$")
-
-
-
     ax2.set_xlabel("x [m]")
     ax2.set_ylabel("y [m]")
     ax2.set_title("Robot")
-#    ax2.axis("equal", adjustable = "box")
     ax2.axis([-15, 15, -15, 15])
     ax2.grid()
     ax2.legend(fontsize = 10)
-
-#    ax2.scatter(loLM[:, 0], loLM[:, 1], s = 100, c = "yellow", marker =ax", alpha = 0.5, linewidthsax"2",
-#                edgaxlors = "orange", label = "Land Mark"ax
-#    ax2.set_xlabel("x [m]")
-#    ax2axt_ylabel("y [ax)
-#    ax2.set_title("Graph-based SLAM")
-#    ax2.axis("equal", adjustable = "box")
-#    ax2.grid()
-#    ax2.legend(fontsize = 10)
-
 
 if __name__ == "__main__":
 
