@@ -216,10 +216,14 @@ class Robot(object):
         self.__mPosesActu = [aPose]  # 姿勢（実際値）
         self.__mPosesGues = [aPose]  # 姿勢（推定値）
         #---------- 制御 ----------
-        self.__mCtr = []
+        self.__mCtr = [[]]
         #---------- 観測 ----------
-        self.__mObsActu = []
-        self.__mObsTrue = []
+        self.__mObsActu = [[]]
+        self.__mObsTrue = [[]]
+
+        #---------- 情報行列 ----------
+        self.__mInfoMat = [[]]
+
 
         # 誤差楕円の信頼区間[%]
         self.__mConfidence_interval = 99.0
@@ -258,17 +262,19 @@ class Robot(object):
 
         obsNext = []
         poseNext = []
+        self.__mInfoMat = []
         for obsCrnt, poseCrnt in zip(reversed(self.__mObsActu), reversed(self.__mPosesGues)):
+            infoMat = []
             if len(obsCrnt) > 0 and len(obsNext) > 0:
                 for j in range(len(obsCrnt)):
                     for k in range(len(obsNext)):
                         if obsCrnt[j][0] == obsNext[k][0]:
-                            lmCrnt = obsCrnt[j][1]
-                            lmNext = obsNext[j][1]
+                            obsPoseCrnt = obsCrnt[j][1]
+                            obsPoseNext = obsNext[k][1]
 
                             # 観測結果によるエッジ算出
-                            lmCrntWorld = self.__tfRobot2LandMark(lmCrnt)
-                            lmNextWorld = self.__tfRobot2LandMark(lmNext)
+                            lmCrntWorld = self.__tfRobot2LandMark(obsPoseCrnt)
+                            lmNextWorld = self.__tfRobot2LandMark(obsPoseNext)
                             relPose = self.__calcRelativePoseByObservation(lmCrntWorld, lmNextWorld)
                             print("<相対姿勢>(LandMark ID:{0})>t[{1:.2f}[m], {2:.2f}[deg], {3:.2f}[deg], t+1[{4:.2f}[m], {5:.2f}[deg], {6:.2f}[deg]], Rel[x={7:.2f}[m], y={8:.2f}[m], t={9:.2f}[deg]]"
                                   .format(j,
@@ -277,17 +283,21 @@ class Robot(object):
                                           relPose[0, 0], relPose[1, 0], np.rad2deg(relPose[2, 0])))
 
                             # 計測座標系での情報行列算出
-                            lmCovCrntM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(lmCrnt)
-                            lmCovCrntW = self.__mScnSnsr.tfMeasurement2World(lmCovCrntM, lmCrnt[1], poseCrnt[2, 0])
+                            lmCovCrntM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPoseCrnt)
+                            lmCovCrntW = self.__mScnSnsr.tfMeasurement2World(lmCovCrntM, obsPoseCrnt[1], poseCrnt[2, 0])
 
-                            lmCovNextM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(lmNext)
-                            lmCovNextW = self.__mScnSnsr.tfMeasurement2World(lmCovNextM, lmNext[1], poseNext[2, 0])
+                            lmCovNextM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPoseNext)
+                            lmCovNextW = self.__mScnSnsr.tfMeasurement2World(lmCovNextM, obsPoseNext[1], poseNext[2, 0])
+
+                            infoMat = (obsCrnt[j][0], np.linalg.inv(lmCovCrntW + lmCovNextW))
 
             else:
                 print("なし")
 
             obsNext = obsCrnt
             poseNext = poseCrnt
+            self.__mInfoMat.insert(-1, infoMat)
+
 
     def __calcRelativePoseByObservation(self, aOrigin, aTarget):
         """観測結果による、相対姿勢算出
