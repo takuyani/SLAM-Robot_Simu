@@ -277,14 +277,14 @@ class Robot(object):
 
                             # 姿勢誤差算出
                             e = relPoseRbt - relPoseObs
-                            err.append(obsCrnt[j][0], e)
+                            err.append([obsCrnt[j][0], e])
 
                             # 計測座標系での情報行列算出
                             lmCovCrntM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPoseCrnt)
                             lmCovCrntW = self.__mScnSnsr.tfMeasurement2World(lmCovCrntM, obsPoseCrnt[1], poseCrnt[2, 0])
                             lmCovPrevM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPosePrev)
                             lmCovPrevW = self.__mScnSnsr.tfMeasurement2World(lmCovPrevM, obsPosePrev[1], posePrev[2, 0])
-                            infoMat.append(obsCrnt[j][0], np.linalg.inv(lmCovCrntW + lmCovPrevW))
+                            infoMat.append([obsCrnt[j][0], np.linalg.inv(lmCovCrntW + lmCovPrevW)])
 
             else:
                 print("なし")
