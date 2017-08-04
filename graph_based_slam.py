@@ -216,6 +216,10 @@ class Robot(object):
         self.__mErr = [[]]
         self.__mInfoMat = [[]]
 
+        # 空の情報行列と情報ベクトルを作成
+        n = len(robot.guess_poses)*3
+        matH = np.zeros((n,n))
+        vecb = np.zeros((n,1))
 
         # 誤差楕円の信頼区間[%]
         self.__mConfidence_interval = 99.0
@@ -278,6 +282,8 @@ class Robot(object):
                             # 姿勢誤差算出
                             e = relPoseRbt - relPoseObs
                             err.append([obsCrnt[j][0], e])
+#                            print("error:ID<{0}>,  x = {1:.3f}[m], y = {2:.3f}[m], θ = {3:.3f}[deg]".format(obsCrnt[j][0], e[0, 0], e[1, 0], np.rad2deg(e[2, 0])))
+
 
                             # 計測座標系での情報行列算出
                             lmCovCrntM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPoseCrnt)
@@ -286,6 +292,17 @@ class Robot(object):
                             lmCovPrevW = self.__mScnSnsr.tfMeasurement2World(lmCovPrevM, obsPosePrev[1], posePrev[2, 0])
                             infoMat.append([obsCrnt[j][0], np.linalg.inv(lmCovCrntW + lmCovPrevW)])
 
+                            # ヤコビアン算出
+                            theta = posePrev[2, 0] + obsPosePrev[1]
+                            jacobMatPrev = np.array([[-1,  0,  obsPosePrev[0] * np.sin(theta)],
+                                                     [ 0, -1, -obsPosePrev[0] * np.cos(theta)],
+                                                     [ 0,  0, -1                             ]])
+                            theta = poseCrnt[2, 0] + obsPoseCrnt[1]
+                            jacobMatCrnt = np.array([[ 1,  0, -obsPoseCrnt[0] * np.sin(theta)],
+                                                     [ 0,  1,  obsPoseCrnt[0] * np.cos(theta)],
+                                                     [ 0,  0,  1                             ]])
+
+
             else:
                 print("なし")
 
@@ -293,7 +310,6 @@ class Robot(object):
             posePrev = poseCrnt
             self.__mInfoMat.append(infoMat)
             self.__mErr.append(err)
-
 
     def __calcRelativePoseByObservation(self, aObsPoseCrnt, aObsPosePrev):
         """観測結果による、相対姿勢算出
