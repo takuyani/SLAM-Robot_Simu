@@ -7,16 +7,14 @@
 # attention    none
 #==============================================================================
 
+import numpy.matlib
 import numpy as np
 import scipy as sp
-from numpy import matlib as matlib
-from matplotlib import animation, mlab
 import matplotlib.pyplot as plt
 from mylib import error_ellipse
 from mylib import limit
 from mylib import transform as tf
 import motion_model as mm
-from docutils.parsers import null
 from matplotlib import animation, patches
 
 class ScanSensor(object):
@@ -216,14 +214,37 @@ class Robot(object):
         self.__mErr = [[]]
         self.__mInfoMat = [[]]
 
+
         # 空の情報行列と情報ベクトルを作成
-        n = len(robot.guess_poses)*3
-        matH = np.zeros((n,n))
-        vecb = np.zeros((n,1))
+        self.__iniMatH = np.array([[0.0, 0.0, 0.0],
+                                   [0.0, 0.0, 0.0],
+                                   [0.0, 0.0, 0.0]])
+        self.__iniVecB = np.array([[0.0],
+                                   [0.0],
+                                   [0.0]])
+        self.__matH = np.array(self.__iniMatH)
+        self.__vecB = np.array(self.__iniVecB)
 
         # 誤差楕円の信頼区間[%]
         self.__mConfidence_interval = 99.0
         self.__mEllipse = error_ellipse.ErrorEllipse(self.__mConfidence_interval)
+
+
+    def __resizeInfoMatAndVec(self):
+        """"情報行列と情報ベクトルのリサイズ処理
+        引数：
+            なし
+        返り値：
+            なし
+
+        """
+        length = len(self.__mPosesGues)
+
+        addMat = numpy.matlib.repmat(self.__iniMatH,length-1,1)
+        matH = np.hstack((self.__matH, addMat))
+        addMat = numpy.matlib.repmat(self.__iniMatH,1,length)
+        self.__matH = np.vstack((matH, addMat))
+        self.__vecB = np.vstack((self.__vecB, self.__iniVecB))
 
 
     def getPose(self):
@@ -246,6 +267,7 @@ class Robot(object):
         self.__mCtr.append(np.array([aV, aW]))  # 制御
         self.__mPosesActu.append(poseActu)  # 姿勢（実際値）
         self.__mPosesGues.append(poseGues)  # 姿勢（推定値）
+        self.__resizeInfoMatAndVec()
 
         obsWithNoise, obsWithoutNoise = self.__mScnSnsr.scan(poseActu)
         self.__mObsActu.append(obsWithNoise)  # 観測結果
@@ -310,6 +332,7 @@ class Robot(object):
             posePrev = poseCrnt
             self.__mInfoMat.append(infoMat)
             self.__mErr.append(err)
+
 
     def __calcRelativePoseByObservation(self, aObsPoseCrnt, aObsPosePrev):
         """観測結果による、相対姿勢算出
