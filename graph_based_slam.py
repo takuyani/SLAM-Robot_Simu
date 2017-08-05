@@ -211,17 +211,10 @@ class Robot(object):
         self.__mObsTrue = [[]]
 
         #---------- 情報行列 ----------
-        self.__mErr = [[]]
-        self.__mInfoMat = [[]]
-
 
         # 空の情報行列と情報ベクトルを作成
-        self.__matH = np.array([[0.0, 0.0, 0.0],
-                                [0.0, 0.0, 0.0],
-                                [0.0, 0.0, 0.0]])
-        self.__vecB = np.array([[0.0],
-                                [0.0],
-                                [0.0]])
+        self.__matH = np.zeros((3, 3))
+        self.__vecB = np.zeros((3, 1))
 
         # 誤差楕円の信頼区間[%]
         self.__mConfidence_interval = 99.0
@@ -235,20 +228,13 @@ class Robot(object):
             なし
 
         """
-        iniMatH = np.array([[0.0, 0.0, 0.0],
-                            [0.0, 0.0, 0.0],
-                            [0.0, 0.0, 0.0]])
-        iniVecB = np.array([[0.0],
-                            [0.0],
-                            [0.0]])
 
-        length = len(self.__mPosesGues)
+        length = len(self.__mPosesGues) * 3
 
-        addMat = numpy.matlib.repmat(iniMatH,length-1,1)
-        matH = np.hstack((self.__matH, addMat))
-        addMat = numpy.matlib.repmat(iniMatH,1,length)
-        self.__matH = np.vstack((matH, addMat))
-        self.__vecB = np.vstack((self.__vecB, iniVecB))
+        self.__matH = np.zeros((length, length))
+        self.__vecB = np.zeros((length, 1))
+
+        self.__matH[0:3,0:3] += np.identity(3)*10000
 
 
     def getPose(self):
@@ -284,9 +270,7 @@ class Robot(object):
 
         obsPrev = []
         posePrev = []
-        self.__mInfoMat = []
-        self.__mErr = []
-        for obsCrnt, poseCrnt in zip(self.__mObsActu, self.__mPosesGues):
+        for t, (obsCrnt, poseCrnt) in enumerate(zip(self.__mObsActu, self.__mPosesGues)):
             infoMat = []
             err = []
             if len(obsCrnt) > 0 and len(obsPrev) > 0:
@@ -306,9 +290,8 @@ class Robot(object):
                             relPoseObs = self.__calcRelativePoseByObservation(lmCrntWorld, lmPrevWorld)
 
                             # 姿勢誤差算出
-                            e = relPoseRbt - relPoseObs
-                            err.append([obsCrnt[j][0], e])
-#                            print("error:ID<{0}>,  x = {1:.3f}[m], y = {2:.3f}[m], θ = {3:.3f}[deg]".format(obsCrnt[j][0], e[0, 0], e[1, 0], np.rad2deg(e[2, 0])))
+                            err = relPoseRbt - relPoseObs
+                            print("error:ID<{0}>,  x = {1:.3f}[m], y = {2:.3f}[m], θ = {3:.3f}[deg]".format(obsCrnt[j][0], err[0, 0], err[1, 0], np.rad2deg(err[2, 0])))
 
 
                             # 計測座標系での情報行列算出
@@ -316,7 +299,7 @@ class Robot(object):
                             lmCovCrntW = self.__mScnSnsr.tfMeasurement2World(lmCovCrntM, obsPoseCrnt[1], poseCrnt[2, 0])
                             lmCovPrevM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPosePrev)
                             lmCovPrevW = self.__mScnSnsr.tfMeasurement2World(lmCovPrevM, obsPosePrev[1], posePrev[2, 0])
-                            infoMat.append([obsCrnt[j][0], np.linalg.inv(lmCovCrntW + lmCovPrevW)])
+                            infoMat = np.linalg.inv(lmCovCrntW + lmCovPrevW)
 
                             # ヤコビアン算出
                             theta = posePrev[2, 0] + obsPosePrev[1]
@@ -328,15 +311,26 @@ class Robot(object):
                                                      [ 0,  1,  obsPoseCrnt[0] * np.cos(theta)],
                                                      [ 0,  0,  1                             ]])
 
+                            pp = (t-1) * 3
+                            pc = t * 3
+                            # 情報行列更新
+                            self.__matH[pp:pp + 3, pp:pp + 3] += jacobMatPrev.T @ infoMat @ jacobMatPrev
+                            self.__matH[pp:pp + 3, pc:pc + 3] += jacobMatPrev.T @ infoMat @ jacobMatCrnt
+                            self.__matH[pc:pc + 3, pp:pp + 3] += jacobMatCrnt.T @ infoMat @ jacobMatPrev
+                            self.__matH[pc:pc + 3, pc:pc + 3] += jacobMatCrnt.T @ infoMat @ jacobMatCrnt
+
+                            # 情報ベクトル更新
+                            self.__vecB[pp:pp + 3, 0][:, np.newaxis] += jacobMatPrev.T @ infoMat @ err
+                            self.__vecB[pc:pc + 3, 0][:, np.newaxis] += jacobMatCrnt.T @ infoMat @ err
 
             else:
                 print("なし")
 
             obsPrev = obsCrnt
             posePrev = poseCrnt
-            self.__mInfoMat.append(infoMat)
-            self.__mErr.append(err)
 
+        if t > 3:
+            delta = - np.linalg.inv(self.__matH) @ self.__vecB
 
     def __calcRelativePoseByObservation(self, aObsPoseCrnt, aObsPosePrev):
         """観測結果による、相対姿勢算出
