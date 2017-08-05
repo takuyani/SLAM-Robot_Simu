@@ -216,19 +216,16 @@ class Robot(object):
 
 
         # 空の情報行列と情報ベクトルを作成
-        self.__iniMatH = np.array([[0.0, 0.0, 0.0],
-                                   [0.0, 0.0, 0.0],
-                                   [0.0, 0.0, 0.0]])
-        self.__iniVecB = np.array([[0.0],
-                                   [0.0],
-                                   [0.0]])
-        self.__matH = np.array(self.__iniMatH)
-        self.__vecB = np.array(self.__iniVecB)
+        self.__matH = np.array([[0.0, 0.0, 0.0],
+                                [0.0, 0.0, 0.0],
+                                [0.0, 0.0, 0.0]])
+        self.__vecB = np.array([[0.0],
+                                [0.0],
+                                [0.0]])
 
         # 誤差楕円の信頼区間[%]
         self.__mConfidence_interval = 99.0
         self.__mEllipse = error_ellipse.ErrorEllipse(self.__mConfidence_interval)
-
 
     def __resizeInfoMatAndVec(self):
         """"情報行列と情報ベクトルのリサイズ処理
@@ -238,13 +235,20 @@ class Robot(object):
             なし
 
         """
+        iniMatH = np.array([[0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0]])
+        iniVecB = np.array([[0.0],
+                            [0.0],
+                            [0.0]])
+
         length = len(self.__mPosesGues)
 
-        addMat = numpy.matlib.repmat(self.__iniMatH,length-1,1)
+        addMat = numpy.matlib.repmat(iniMatH,length-1,1)
         matH = np.hstack((self.__matH, addMat))
-        addMat = numpy.matlib.repmat(self.__iniMatH,1,length)
+        addMat = numpy.matlib.repmat(iniMatH,1,length)
         self.__matH = np.vstack((matH, addMat))
-        self.__vecB = np.vstack((self.__vecB, self.__iniVecB))
+        self.__vecB = np.vstack((self.__vecB, iniVecB))
 
 
     def getPose(self):
