@@ -11,6 +11,7 @@ import numpy.matlib
 import numpy as np
 import scipy as sp
 import matplotlib.pyplot as plt
+import itertools
 from mylib import error_ellipse
 from mylib import limit
 from mylib import transform as tf
@@ -180,7 +181,130 @@ class ScanSensor(object):
         # ランドマークの描写
         aAx.scatter(self.__mLandMarks[:, 0], self.__mLandMarks[:, 1], s = 100, c = "yellow", marker = "*", alpha = 0.5, linewidths = "2", edgecolors = "orange", label = "Land Mark(True)")
 
+    def getLandMarkNum(self):
+        return self.__mLandMarksNum
 
+
+class HalfEdge(object):
+    """ロボットclass"""
+    def __init__(self, aTime, aLandMarkId, aLandMarkPose, aRobotPoseId):
+        self.mTime = aTime
+        self.mLandMarkId = aLandMarkId
+        self.mLandMarkPose = aLandMarkPose
+        self.mRobotPoseId = aRobotPoseId
+
+
+
+class Edge(object):
+    """ロボットclass"""
+
+    #インスタンス変数定義
+    # 空の情報行列と情報ベクトルを作成
+    __mCnt = 0
+    __mVatH = np.zeros((3, 3))
+    __mVecB = np.zeros((3, 1))
+    __mTimePrev = 0
+
+#    def __init__(self, aTime, aObsCrnt, aObsPrev, aPoseCrnt, aPosePrev):
+    def __init__(self, aHalfEdgeObj1, aHalfEdgeObj2, aRobotPose):
+        self.__mLandMarkId = aHalfEdgeObj1.mLandMarkId
+
+        obsPoseCrnt = aHalfEdgeObj1.mLandMarkPose
+        obsPosePrev = aHalfEdgeObj2.mLandMarkPose
+        poseCrnt = aRobotPose[aHalfEdgeObj1.mRobotPoseId]
+        posePrev = aRobotPose[aHalfEdgeObj2.mRobotPoseId]
+
+        """
+        if aTime > Edge.__mTimePrev:
+            Edge.__mTimePrev = aTime
+            self. __resizeInfoMatAndVec()
+            self.__mCntId = Edge.__mCnt
+        else:
+            self.__mCntId = Edge.__mCnt
+
+        # ロボット推定姿勢によるエッジ(相対姿勢)算出
+        relPoseRbt = self.__calcRelativePoseByRobotPose(poseCrnt, posePrev)
+
+
+        # 観測結果によるエッジ(相対姿勢)算出
+        lmCrntWorld = self.__tfRobot2LandMark(obsPoseCrnt)
+        lmPrevWorld = self.__tfRobot2LandMark(obsPosePrev)
+        relPoseObs = self.__calcRelativePoseByObservation(lmCrntWorld, lmPrevWorld)
+
+        # 姿勢誤差算出
+        err = relPoseRbt - relPoseObs
+        print("error:ID<{0}>,  x = {1:.3f}[m], y = {2:.3f}[m], θ = {3:.3f}[deg]".format(self.__mLandMarkId, err[0, 0], err[1, 0], np.rad2deg(err[2, 0])))
+
+
+        # 計測座標系での情報行列算出
+        lmCovCrntM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPoseCrnt)
+        lmCovCrntW = self.__mScnSnsr.tfMeasurement2World(lmCovCrntM, obsPoseCrnt[1], poseCrnt[2, 0])
+        lmCovPrevM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPosePrev)
+        lmCovPrevW = self.__mScnSnsr.tfMeasurement2World(lmCovPrevM, obsPosePrev[1], posePrev[2, 0])
+        infoMat = np.linalg.inv(lmCovCrntW + lmCovPrevW)
+
+        # ヤコビアン算出
+        theta = posePrev[2, 0] + obsPosePrev[1]
+        jacobMatPrev = np.array([[-1,  0,  obsPosePrev[0] * np.sin(theta)],
+                                 [ 0, -1, -obsPosePrev[0] * np.cos(theta)],
+                                 [ 0,  0, -1                             ]])
+        theta = poseCrnt[2, 0] + obsPoseCrnt[1]
+        jacobMatCrnt = np.array([[ 1,  0, -obsPoseCrnt[0] * np.sin(theta)],
+                                 [ 0,  1,  obsPoseCrnt[0] * np.cos(theta)],
+                                 [ 0,  0,  1                             ]])
+
+        pp = (t-1) * 3
+        pc = t * 3
+        # 情報行列更新
+        self.__matH[pp:pp + 3, pp:pp + 3] += jacobMatPrev.T @ infoMat @ jacobMatPrev
+        self.__matH[pp:pp + 3, pc:pc + 3] += jacobMatPrev.T @ infoMat @ jacobMatCrnt
+        self.__matH[pc:pc + 3, pp:pp + 3] += jacobMatCrnt.T @ infoMat @ jacobMatPrev
+        self.__matH[pc:pc + 3, pc:pc + 3] += jacobMatCrnt.T @ infoMat @ jacobMatCrnt
+
+        # 情報ベクトル更新
+        self.__vecB[pp:pp + 3, 0][:, np.newaxis] += jacobMatPrev.T @ infoMat @ err
+        self.__vecB[pc:pc + 3, 0][:, np.newaxis] += jacobMatCrnt.T @ infoMat @ err
+        """
+
+    def __resizeInfoMatAndVec(self):
+        """"情報行列と情報ベクトルのリサイズ処理
+        引数：
+            なし
+        返り値：
+            なし
+
+        """
+        # 空の情報行列と情報ベクトルを作成
+        matZeroVer = np.zeros((Edge.__mCnt * 3, 3))
+        Edge.__mCnt += 1
+        matZeroHor = np.zeros((3, Edge.__mCnt * 3))
+        vecZero = np.zeros((3, 1))
+
+        Edge.__mVatH = np.hstack((Edge.__mVatH, matZeroVer))
+        Edge.__mVatH = np.vstack((Edge.__mVatH, matZeroHor))
+        Edge.__mVecB = np.vstack((Edge.__mVecB, vecZero))
+
+
+    def __clearInfoMatAndVec(self):
+        """"情報行列と情報ベクトルのクリア処理
+        引数：
+            なし
+        返り値：
+            なし
+
+        """
+        length = Edge.__mCnt
+        Edge.__mVatH = np.zeros((length, length))
+        Edge.__mVecB = np.zeros((length, 1))
+
+        self.__matH[0:3,0:3] += np.identity(3)*10000
+
+
+
+#        if aObsCrnt[1] == aObsPrev[1]
+#            self.__mLandMarkId = aObsCrnt[1]
+
+#            self.id1, self.id2 = obs1.pose_id, obs2.pose_id          # どの2つの姿勢なのかを記録（それぞれ姿勢1、姿勢2と呼
 
 class Robot(object):
     """ロボットclass"""
@@ -200,15 +324,17 @@ class Robot(object):
 
         #---------- 制御周期 ----------
         self.__mDt = aDt
+        self.__mTime = 0
 
         #---------- 姿勢 ----------
         self.__mPosesActu = [aPose]  # 姿勢（実際値）
         self.__mPosesGues = [aPose]  # 姿勢（推定値）
         #---------- 制御 ----------
-        self.__mCtr = [[]]
+        self.__mCtr = []
         #---------- 観測 ----------
-        self.__mObsActu = [[]]
-        self.__mObsTrue = [[]]
+        self.__mObsActu = []
+        self.__mObsTrue = []
+        self.__mHalfEdges = []
 
         #---------- 情報行列 ----------
 
@@ -257,14 +383,52 @@ class Robot(object):
         self.__mCtr.append(np.array([aV, aW]))  # 制御
         self.__mPosesActu.append(poseActu)  # 姿勢（実際値）
         self.__mPosesGues.append(poseGues)  # 姿勢（推定値）
-        self.__resizeInfoMatAndVec()
+#        self.__resizeInfoMatAndVec()
 
-        obsWithNoise, obsWithoutNoise = self.__mScnSnsr.scan(poseActu)
-        self.__mObsActu.append(obsWithNoise)  # 観測結果
-        self.__mObsTrue.append(obsWithoutNoise)  # 観測結果
+
+        obsActuCrnt, obsTrueCrnt = self.__mScnSnsr.scan(poseActu)
+
+        for obs in obsActuCrnt:
+            self.__mHalfEdges.append(HalfEdge(self.__mTime, obs[0], obs[1], len(self.__mPosesGues)-1))
+
+        self.__mObsActu.append(obsActuCrnt)  # 観測結果
+        self.__mObsTrue.append(obsTrueCrnt)  # 観測結果
+
+        self.__mTime += 1
 
 
     def estimateOpticalTrajectory(self):
+        """
+        pos_edges = []
+        lm_num = self.__mScnSnsr.getLandMarkNum()
+        time_list_all = []
+        for i in range(lm_num):
+            time_list = []
+            heobj_list = list(filter(lambda obj: obj.mLandMarkId == i, self.__mHalfEdges))
+            if len(heobj_list)>0:
+                for heobj in heobj_list:
+                    time_list.append(heobj.mTime)
+                del time_list[time_list.index(min(time_list))]
+            time_list_all.extend(time_list)
+
+            pair = list(itertools.combinations(heobj_list,2))
+            for p in pair:
+                pos_edges.append(Edge(p[0], p[1], self.__mPosesGues)
+
+        # 重複削除
+        time_list_all = list(set(time_list_all))
+        """
+
+        """
+        if len(obsActuCrnt) > 0 and len(self.__mObsActuPrev):
+            for j in range(len(obsActuCrnt)):
+                for k in range(len(self.__mObsActuPrev)):
+                    if obsActuCrnt[j][0] == self.__mObsActuPrev[k][0]:
+                        self.__Edges.append(Edge(self.__mTime, obsActuCrnt, self.__mObsActuPrev, poseGues, self.__mPosesGuesPrev))
+
+
+
+
         print("[軌跡推定]Ctr:{0}, PosesActu = {1}, PosesGues = {2}, Obs = {3}".format(len(self.__mCtr), len(self.__mPosesActu),
                                                                             len(self.__mPosesGues), len(self.__mObsActu)))
 
@@ -331,6 +495,7 @@ class Robot(object):
 
         if t > 3:
             delta = - np.linalg.inv(self.__matH) @ self.__vecB
+        """
 
     def __calcRelativePoseByObservation(self, aObsPoseCrnt, aObsPosePrev):
         """観測結果による、相対姿勢算出
