@@ -185,8 +185,8 @@ class ScanSensor(object):
         return self.__mLandMarksNum
 
 
-class HalfEdge(object):
-    """ロボットclass"""
+class Observation(object):
+    """観測class"""
     def __init__(self, aTime, aLandMarkId, aLandMarkPose, aRobotPoseId):
         self.mTime = aTime
         self.mLandMarkId = aLandMarkId
@@ -200,35 +200,47 @@ class Edge(object):
 
     #インスタンス変数定義
     # 空の情報行列と情報ベクトルを作成
-    __mCnt = 0
-    __mVatH = np.zeros((3, 3))
+    __mMatH = np.zeros((3, 3))
     __mVecB = np.zeros((3, 1))
-    __mTimePrev = 0
+    __KeepLandMarkId = []
+    __KeepLandMarkTime = []
 
 #    def __init__(self, aTime, aObsCrnt, aObsPrev, aPoseCrnt, aPosePrev):
-    def __init__(self, aHalfEdgeObj1, aHalfEdgeObj2, aRobotPose):
-        self.__mLandMarkId = aHalfEdgeObj1.mLandMarkId
+    def __init__(self, aObs1, aObs2, aRobotPose):
+        self.__mLandMarkId = aObs1.mLandMarkId
 
-        obsPoseCrnt = aHalfEdgeObj1.mLandMarkPose
-        obsPosePrev = aHalfEdgeObj2.mLandMarkPose
-        poseCrnt = aRobotPose[aHalfEdgeObj1.mRobotPoseId]
-        posePrev = aRobotPose[aHalfEdgeObj2.mRobotPoseId]
-
-        """
-        if aTime > Edge.__mTimePrev:
-            Edge.__mTimePrev = aTime
-            self. __resizeInfoMatAndVec()
-            self.__mCntId = Edge.__mCnt
+        if aObs1.mTime > aObs2.mTime:
+            self.__timeAft = aObs1.mTime
+            self.__timeBfr = aObs2.mTime
+            obsPoseAft = aObs1.mLandMarkPose
+            obsPoseBfr = aObs2.mLandMarkPose
+            rbtPoseAft = aRobotPose[aObs1.mRobotPoseId]
+            rbtPoseBfr = aRobotPose[aObs2.mRobotPoseId]
         else:
-            self.__mCntId = Edge.__mCnt
+            self.__timeAft = aObs2.mTime
+            self.__timeBfr = aObs1.mTime
+            obsPoseAft = aObs2.mLandMarkPose
+            obsPoseBfr = aObs1.mLandMarkPose
+            rbtPoseAft = aRobotPose[aObs2.mRobotPoseId]
+            rbtPoseBfr = aRobotPose[aObs1.mRobotPoseId]
+
+
+        # 新規に検出されたランドマーク
+        if self.__mLandMarkId in Edge.__KeepLandMarkId:
+            Edge.__KeepLandMarkId.append(self.__mLandMarkId)
+            if self.__timeBfr not in Edge.__KeepLandMarkTime:
+                Edge.__KeepLandMarkTime.append(self.__timeBfr)
+
+        # 検出された時間を保持
+        Edge.__KeepLandMarkTime.append(self.__timeAft)
+
 
         # ロボット推定姿勢によるエッジ(相対姿勢)算出
-        relPoseRbt = self.__calcRelativePoseByRobotPose(poseCrnt, posePrev)
-
+        relPoseRbt = self.__calcRelativePoseByRobotPose(rbtPoseAft, rbtPoseBfr)
 
         # 観測結果によるエッジ(相対姿勢)算出
-        lmCrntWorld = self.__tfRobot2LandMark(obsPoseCrnt)
-        lmPrevWorld = self.__tfRobot2LandMark(obsPosePrev)
+        lmCrntWorld = self.__tfRobot2LandMark(obsPoseAft)
+        lmPrevWorld = self.__tfRobot2LandMark(obsPoseBfr)
         relPoseObs = self.__calcRelativePoseByObservation(lmCrntWorld, lmPrevWorld)
 
         # 姿勢誤差算出
@@ -237,22 +249,31 @@ class Edge(object):
 
 
         # 計測座標系での情報行列算出
-        lmCovCrntM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPoseCrnt)
-        lmCovCrntW = self.__mScnSnsr.tfMeasurement2World(lmCovCrntM, obsPoseCrnt[1], poseCrnt[2, 0])
-        lmCovPrevM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPosePrev)
-        lmCovPrevW = self.__mScnSnsr.tfMeasurement2World(lmCovPrevM, obsPosePrev[1], posePrev[2, 0])
+        lmCovCrntM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPoseAft)
+        lmCovCrntW = self.__mScnSnsr.tfMeasurement2World(lmCovCrntM, obsPoseAft[1], rbtPoseAft[2, 0])
+        lmCovPrevM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPoseBfr)
+        lmCovPrevW = self.__mScnSnsr.tfMeasurement2World(lmCovPrevM, obsPoseBfr[1], rbtPoseBfr[2, 0])
         infoMat = np.linalg.inv(lmCovCrntW + lmCovPrevW)
 
         # ヤコビアン算出
-        theta = posePrev[2, 0] + obsPosePrev[1]
-        jacobMatPrev = np.array([[-1,  0,  obsPosePrev[0] * np.sin(theta)],
-                                 [ 0, -1, -obsPosePrev[0] * np.cos(theta)],
+        theta = rbtPoseBfr[2, 0] + obsPoseBfr[1]
+        jacobMatPrev = np.array([[-1,  0,  obsPoseBfr[0] * np.sin(theta)],
+                                 [ 0, -1, -obsPoseBfr[0] * np.cos(theta)],
                                  [ 0,  0, -1                             ]])
-        theta = poseCrnt[2, 0] + obsPoseCrnt[1]
-        jacobMatCrnt = np.array([[ 1,  0, -obsPoseCrnt[0] * np.sin(theta)],
-                                 [ 0,  1,  obsPoseCrnt[0] * np.cos(theta)],
+        theta = rbtPoseAft[2, 0] + obsPoseAft[1]
+        jacobMatCrnt = np.array([[ 1,  0, -obsPoseAft[0] * np.sin(theta)],
+                                 [ 0,  1,  obsPoseAft[0] * np.cos(theta)],
                                  [ 0,  0,  1                             ]])
 
+
+        self.__matH_PrevPrev = jacobMatPrev.T @ infoMat @ jacobMatPrev
+        self.__matH_PrevCrnt = jacobMatPrev.T @ infoMat @ jacobMatCrnt
+        self.__matH_CrntPrev = jacobMatCrnt.T @ infoMat @ jacobMatPrev
+        self.__matH_CrntCrnt = jacobMatCrnt.T @ infoMat @ jacobMatCrnt
+        self.__vecB_Prev[:, np.newaxis] = (jacobMatPrev.T @ infoMat @ err)
+        self.__vecB_Crnt[:, np.newaxis] = (jacobMatCrnt.T @ infoMat @ err)
+
+        """
         pp = (t-1) * 3
         pc = t * 3
         # 情報行列更新
@@ -266,7 +287,75 @@ class Edge(object):
         self.__vecB[pc:pc + 3, 0][:, np.newaxis] += jacobMatCrnt.T @ infoMat @ err
         """
 
-    def __resizeInfoMatAndVec(self):
+    def __calcRelativePoseByRobotPose(self, aPoseCrnt, aPosePrev):
+        """ロボットの推定姿勢による、相対姿勢算出
+        引数：
+            aPoseCrnt：ロボット現在姿勢
+                aPoseCrnt[0, 0]：x座標[m]
+                aPoseCrnt[1, 0]：y座標[m]
+                aPoseCrnt[2, 0]：方角(rad)
+            aPosePrev：ロボット過去姿勢
+                aPoseCrnt[0, 0]：x座標[m]
+                aPoseCrnt[1, 0]：y座標[m]
+                aPoseCrnt[2, 0]：方角(rad)
+        返り値：
+            rel：相対ロボット姿勢
+                rel[0, 0]：x座標[m]
+                rel[1, 0]：y座標[m]
+                rel[2, 0]：方角(rad)
+        """
+        rel = aPoseCrnt - aPosePrev
+
+        return rel
+
+    def __tfRobot2LandMark(self, aLandMark):
+        """ロボット座標系→ランドマーク世界座標系変換
+            ロボットを原点とした座標系からランドマークを原点とした世界座標系に変換し、
+            変換後のロボット姿勢を戻り値として返す。
+        引数：
+            aLandMark：ランドマーク姿勢
+                aLandMark[0]：ユークリッド距離
+                aLandMark[1]：観測方向
+                aLandMark[2]：ランドマーク向き
+        返り値：
+            robot：ランドマークを原点とした世界座標系でのロボット姿勢
+                robot[0]：ユークリッド距離
+                robot[1]：観測方向
+                robot[2]：ランドマーク向き
+        """
+        dist = aLandMark[0]
+        direct = limit.limit_angle(np.pi + aLandMark[1] - aLandMark[2])
+        orient = limit.limit_angle(tf.BASE_ANG - aLandMark[2])
+        robot = [dist, direct, orient]
+        return robot
+
+    def __calcRelativePoseByObservation(self, aObsPoseCrnt, aObsPosePrev):
+        """観測結果による、相対姿勢算出
+        引数：
+            aObsPoseCrnt：ロボット現在姿勢
+                aObsPoseCrnt[0]：ユークリッド距離
+                aObsPoseCrnt[1]：観測方向
+                aObsPoseCrnt[2]：ランドマーク向き
+            aObsPosePrev：ロボット過去姿勢
+                aObsPosePrev[0]：ユークリッド距離
+                aObsPosePrev[1]：観測方向
+                aObsPosePrev[2]：ランドマーク向き
+        返り値：
+            rel：相対ロボット姿勢
+                rel[0, 0]：x座標[m]
+                rel[1, 0]：y座標[m]
+                rel[2, 0]：方角(rad)
+        """
+        px = aObsPoseCrnt[0] * np.cos(aObsPoseCrnt[1]) - aObsPosePrev[0] * np.cos(aObsPosePrev[1])
+        py = aObsPoseCrnt[0] * np.sin(aObsPoseCrnt[1]) - aObsPosePrev[0] * np.sin(aObsPosePrev[1])
+        pt = aObsPoseCrnt[2] - aObsPosePrev[2]
+
+        rel = np.array([[px],
+                        [py],
+                        [pt]])
+        return rel
+
+    def __resizeInfoMatAndVec(self, aCnt):
         """"情報行列と情報ベクトルのリサイズ処理
         引数：
             なし
@@ -275,17 +364,17 @@ class Edge(object):
 
         """
         # 空の情報行列と情報ベクトルを作成
-        matZeroVer = np.zeros((Edge.__mCnt * 3, 3))
-        Edge.__mCnt += 1
-        matZeroHor = np.zeros((3, Edge.__mCnt * 3))
+        matZeroVer = np.zeros((aCnt-1 * 3, 3))
+        matZeroHor = np.zeros((3, aCnt * 3))
         vecZero = np.zeros((3, 1))
 
-        Edge.__mVatH = np.hstack((Edge.__mVatH, matZeroVer))
-        Edge.__mVatH = np.vstack((Edge.__mVatH, matZeroHor))
+        Edge.__mMatH = np.hstack((Edge.__mMatH, matZeroVer))
+        Edge.__mMatH = np.vstack((Edge.__mMatH, matZeroHor))
         Edge.__mVecB = np.vstack((Edge.__mVecB, vecZero))
 
 
-    def __clearInfoMatAndVec(self):
+    @classmethod
+    def clearInfoMatAndVec(cls):
         """"情報行列と情報ベクトルのクリア処理
         引数：
             なし
@@ -293,11 +382,12 @@ class Edge(object):
             なし
 
         """
+        """
         length = Edge.__mCnt
-        Edge.__mVatH = np.zeros((length, length))
+        Edge.__mMatH = np.zeros((length, length))
         Edge.__mVecB = np.zeros((length, 1))
 
-        self.__matH[0:3,0:3] += np.identity(3)*10000
+        Edge.__mMatH[0:3,0:3] += np.identity(3)*10000
 
 
 
@@ -305,6 +395,7 @@ class Edge(object):
 #            self.__mLandMarkId = aObsCrnt[1]
 
 #            self.id1, self.id2 = obs1.pose_id, obs2.pose_id          # どの2つの姿勢なのかを記録（それぞれ姿勢1、姿勢2と呼
+        """
 
 class Robot(object):
     """ロボットclass"""
@@ -389,7 +480,7 @@ class Robot(object):
         obsActuCrnt, obsTrueCrnt = self.__mScnSnsr.scan(poseActu)
 
         for obs in obsActuCrnt:
-            self.__mHalfEdges.append(HalfEdge(self.__mTime, obs[0], obs[1], len(self.__mPosesGues)-1))
+            self.__mHalfEdges.append(Observation(self.__mTime, obs[0], obs[1], len(self.__mPosesGues)-1))
 
         self.__mObsActu.append(obsActuCrnt)  # 観測結果
         self.__mObsTrue.append(obsTrueCrnt)  # 観測結果
@@ -398,6 +489,17 @@ class Robot(object):
 
 
     def estimateOpticalTrajectory(self):
+
+#        Edge.clearInfoMatAndVec()
+
+        pos_edges = []
+        lm_num = self.__mScnSnsr.getLandMarkNum()
+        for i in range(lm_num):
+            heobj_list = list(filter(lambda obj: obj.mLandMarkId == i, self.__mHalfEdges))
+            pair = list(itertools.combinations(heobj_list,2))
+            for p in pair:
+                pos_edges.append(Edge(p[0], p[1], self.__mPosesGues))
+
         """
         pos_edges = []
         lm_num = self.__mScnSnsr.getLandMarkNum()
@@ -433,24 +535,24 @@ class Robot(object):
                                                                             len(self.__mPosesGues), len(self.__mObsActu)))
 
         obsPrev = []
-        posePrev = []
-        for t, (obsCrnt, poseCrnt) in enumerate(zip(self.__mObsActu, self.__mPosesGues)):
+        poseBfr = []
+        for t, (obsCrnt, poseAft) in enumerate(zip(self.__mObsActu, self.__mPosesGues)):
             infoMat = []
             err = []
             if len(obsCrnt) > 0 and len(obsPrev) > 0:
 
                 # ロボット推定姿勢によるエッジ(相対姿勢)算出
-                relPoseRbt = self.__calcRelativePoseByRobotPose(poseCrnt, posePrev)
+                relPoseRbt = self.__calcRelativePoseByRobotPose(poseAft, poseBfr)
 
                 for j in range(len(obsCrnt)):
                     for k in range(len(obsPrev)):
                         if obsCrnt[j][0] == obsPrev[k][0]:
-                            obsPoseCrnt = obsCrnt[j][1]
-                            obsPosePrev = obsPrev[k][1]
+                            obsPoseAft = obsCrnt[j][1]
+                            obsPoseBfr = obsPrev[k][1]
 
                             # 観測結果によるエッジ(相対姿勢)算出
-                            lmCrntWorld = self.__tfRobot2LandMark(obsPoseCrnt)
-                            lmPrevWorld = self.__tfRobot2LandMark(obsPosePrev)
+                            lmCrntWorld = self.__tfRobot2LandMark(obsPoseAft)
+                            lmPrevWorld = self.__tfRobot2LandMark(obsPoseBfr)
                             relPoseObs = self.__calcRelativePoseByObservation(lmCrntWorld, lmPrevWorld)
 
                             # 姿勢誤差算出
@@ -459,20 +561,20 @@ class Robot(object):
 
 
                             # 計測座標系での情報行列算出
-                            lmCovCrntM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPoseCrnt)
-                            lmCovCrntW = self.__mScnSnsr.tfMeasurement2World(lmCovCrntM, obsPoseCrnt[1], poseCrnt[2, 0])
-                            lmCovPrevM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPosePrev)
-                            lmCovPrevW = self.__mScnSnsr.tfMeasurement2World(lmCovPrevM, obsPosePrev[1], posePrev[2, 0])
+                            lmCovCrntM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPoseAft)
+                            lmCovCrntW = self.__mScnSnsr.tfMeasurement2World(lmCovCrntM, obsPoseAft[1], poseAft[2, 0])
+                            lmCovPrevM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPoseBfr)
+                            lmCovPrevW = self.__mScnSnsr.tfMeasurement2World(lmCovPrevM, obsPoseBfr[1], poseBfr[2, 0])
                             infoMat = np.linalg.inv(lmCovCrntW + lmCovPrevW)
 
                             # ヤコビアン算出
-                            theta = posePrev[2, 0] + obsPosePrev[1]
-                            jacobMatPrev = np.array([[-1,  0,  obsPosePrev[0] * np.sin(theta)],
-                                                     [ 0, -1, -obsPosePrev[0] * np.cos(theta)],
+                            theta = poseBfr[2, 0] + obsPoseBfr[1]
+                            jacobMatPrev = np.array([[-1,  0,  obsPoseBfr[0] * np.sin(theta)],
+                                                     [ 0, -1, -obsPoseBfr[0] * np.cos(theta)],
                                                      [ 0,  0, -1                             ]])
-                            theta = poseCrnt[2, 0] + obsPoseCrnt[1]
-                            jacobMatCrnt = np.array([[ 1,  0, -obsPoseCrnt[0] * np.sin(theta)],
-                                                     [ 0,  1,  obsPoseCrnt[0] * np.cos(theta)],
+                            theta = poseAft[2, 0] + obsPoseAft[1]
+                            jacobMatCrnt = np.array([[ 1,  0, -obsPoseAft[0] * np.sin(theta)],
+                                                     [ 0,  1,  obsPoseAft[0] * np.cos(theta)],
                                                      [ 0,  0,  1                             ]])
 
                             pp = (t-1) * 3
@@ -491,80 +593,18 @@ class Robot(object):
                 print("なし")
 
             obsPrev = obsCrnt
-            posePrev = poseCrnt
+            poseBfr = poseAft
 
         if t > 3:
             delta = - np.linalg.inv(self.__matH) @ self.__vecB
         """
 
-    def __calcRelativePoseByObservation(self, aObsPoseCrnt, aObsPosePrev):
-        """観測結果による、相対姿勢算出
-        引数：
-            aObsPoseCrnt：ロボット現在姿勢
-                aObsPoseCrnt[0]：ユークリッド距離
-                aObsPoseCrnt[1]：観測方向
-                aObsPoseCrnt[2]：ランドマーク向き
-            aObsPosePrev：ロボット過去姿勢
-                aObsPosePrev[0]：ユークリッド距離
-                aObsPosePrev[1]：観測方向
-                aObsPosePrev[2]：ランドマーク向き
-        返り値：
-            rel：相対ロボット姿勢
-                rel[0, 0]：x座標[m]
-                rel[1, 0]：y座標[m]
-                rel[2, 0]：方角(rad)
-        """
-        px = aObsPoseCrnt[0] * np.cos(aObsPoseCrnt[1]) - aObsPosePrev[0] * np.cos(aObsPosePrev[1])
-        py = aObsPoseCrnt[0] * np.sin(aObsPoseCrnt[1]) - aObsPosePrev[0] * np.sin(aObsPosePrev[1])
-        pt = aObsPoseCrnt[2] - aObsPosePrev[2]
-
-        rel = np.array([[px],
-                        [py],
-                        [pt]])
-        return rel
-
-    def __calcRelativePoseByRobotPose(self, aPoseCrnt, aPosePrev):
-        """ロボットの推定姿勢による、相対姿勢算出
-        引数：
-            aPoseCrnt：ロボット現在姿勢
-                aPoseCrnt[0, 0]：x座標[m]
-                aPoseCrnt[1, 0]：y座標[m]
-                aPoseCrnt[2, 0]：方角(rad)
-            aPosePrev：ロボット過去姿勢
-                aPoseCrnt[0, 0]：x座標[m]
-                aPoseCrnt[1, 0]：y座標[m]
-                aPoseCrnt[2, 0]：方角(rad)
-        返り値：
-            rel：相対ロボット姿勢
-                rel[0, 0]：x座標[m]
-                rel[1, 0]：y座標[m]
-                rel[2, 0]：方角(rad)
-        """
-        rel = aPoseCrnt - aPosePrev
-
-        return rel
 
 
-    def __tfRobot2LandMark(self, aLandMark):
-        """ロボット座標系→ランドマーク世界座標系変換
-            ロボットを原点とした座標系からランドマークを原点とした世界座標系に変換し、
-            変換後のロボット姿勢を戻り値として返す。
-        引数：
-            aLandMark：ランドマーク姿勢
-                aLandMark[0]：ユークリッド距離
-                aLandMark[1]：観測方向
-                aLandMark[2]：ランドマーク向き
-        返り値：
-            robot：ランドマークを原点とした世界座標系でのロボット姿勢
-                robot[0]：ユークリッド距離
-                robot[1]：観測方向
-                robot[2]：ランドマーク向き
-        """
-        dist = aLandMark[0]
-        direct = limit.limit_angle(np.pi + aLandMark[1] - aLandMark[2])
-        orient = limit.limit_angle(tf.BASE_ANG - aLandMark[2])
-        robot = [dist, direct, orient]
-        return robot
+
+
+
+
 
 
     def draw(self, aAx1, aAx2):
