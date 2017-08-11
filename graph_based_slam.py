@@ -197,31 +197,47 @@ class Observation(object):
         self.mRobotPoseId = aRobotPoseId
 
 
-
 class Edge(object):
-    """ロボットclass"""
 
-    #インスタンス変数定義
-    # 空の情報行列と情報ベクトルを作成
-    __mMatH = np.zeros((3, 3))
-    __mVecB = np.zeros((3, 1))
-    __KeepLandMarkId = []
-    __KeepLandMarkTime = []
+    def __init__(self, aTimeBfr, aTimeAft, aLandMarkId, aMatH_PP, aMatH_PC, aMatH_CP, aMatH_CC, aVecB_P, aVecB_C):
+        self.mTimeBfr = aTimeBfr
+        self.mTimeAft = aTimeAft
+        self.mLandMarkId = aLandMarkId
+        self.mMatH_PrevPrev = aMatH_PP
+        self.mMatH_PrevCrnt = aMatH_PC
+        self.mMatH_CrntPrev = aMatH_CP
+        self.mMatH_CrntCrnt = aMatH_CC
+        self.mVecB_Prev = aVecB_P
+        self.mVecB_Crnt = aVecB_C
 
-#    def __init__(self, aTime, aObsCrnt, aObsPrev, aPoseCrnt, aPosePrev):
-    def __init__(self, aObs1, aObs2, aRobotPose):
-        self.__mLandMarkId = aObs1.mLandMarkId
+
+class TrajectoryEstimator(object):
+    """軌跡推定器class"""
+
+
+    def __init__(self):
+
+        self.__mEdge = []
+
+        # 空の情報行列と情報ベクトルを作成
+        self.__mMatH = np.zeros((3, 3))
+        self.__mVecB = np.zeros((3, 1))
+        self.__KeepLandMarkId = []
+        self.__KeepLandMarkTime = []
+
+    def setPairObs(self, aObs1, aObs2, aRobotPose):
+        landMarkId = aObs1.mLandMarkId
 
         if aObs1.mTime > aObs2.mTime:
-            self.__timeAft = aObs1.mTime
-            self.__timeBfr = aObs2.mTime
+            timeAft = aObs1.mTime
+            timeBfr = aObs2.mTime
             obsPoseAft = aObs1.mLandMarkPose
             obsPoseBfr = aObs2.mLandMarkPose
             rbtPoseAft = aRobotPose[aObs1.mRobotPoseId]
             rbtPoseBfr = aRobotPose[aObs2.mRobotPoseId]
         else:
-            self.__timeAft = aObs2.mTime
-            self.__timeBfr = aObs1.mTime
+            timeAft = aObs2.mTime
+            timeBfr = aObs1.mTime
             obsPoseAft = aObs2.mLandMarkPose
             obsPoseBfr = aObs1.mLandMarkPose
             rbtPoseAft = aRobotPose[aObs2.mRobotPoseId]
@@ -229,13 +245,13 @@ class Edge(object):
 
 
         # 新規に検出されたランドマーク
-        if self.__mLandMarkId in Edge.__KeepLandMarkId:
-            Edge.__KeepLandMarkId.append(self.__mLandMarkId)
-            if self.__timeBfr not in Edge.__KeepLandMarkTime:
-                Edge.__KeepLandMarkTime.append(self.__timeBfr)
+        if landMarkId not in self.__KeepLandMarkId:
+            self.__KeepLandMarkId.append(landMarkId)
+            if timeBfr not in self.__KeepLandMarkTime:
+                self.__KeepLandMarkTime.append(timeBfr)
 
         # 検出された時間を保持
-        Edge.__KeepLandMarkTime.append(self.__timeAft)
+        self.__KeepLandMarkTime.append(timeAft)
 
 
         # ロボット推定姿勢によるエッジ(相対姿勢)算出
@@ -248,7 +264,7 @@ class Edge(object):
 
         # 姿勢誤差算出
         err = relPoseRbt - relPoseObs
-        print("error:ID<{0}>,  x = {1:.3f}[m], y = {2:.3f}[m], θ = {3:.3f}[deg]".format(self.__mLandMarkId, err[0, 0], err[1, 0], np.rad2deg(err[2, 0])))
+        print("error:ID<{0}>,  x = {1:.3f}[m], y = {2:.3f}[m], θ = {3:.3f}[deg]".format(landMarkId, err[0, 0], err[1, 0], np.rad2deg(err[2, 0])))
 
 
         # 計測座標系での情報行列算出
@@ -269,12 +285,16 @@ class Edge(object):
                                  [ 0,  0,  1                            ]])
 
 
-        self.__matH_PrevPrev = jacobMatPrev.T @ infoMat @ jacobMatPrev
-        self.__matH_PrevCrnt = jacobMatPrev.T @ infoMat @ jacobMatCrnt
-        self.__matH_CrntPrev = jacobMatCrnt.T @ infoMat @ jacobMatPrev
-        self.__matH_CrntCrnt = jacobMatCrnt.T @ infoMat @ jacobMatCrnt
-        self.__vecB_Prev = jacobMatPrev.T @ infoMat @ err
-        self.__vecB_Crnt = jacobMatCrnt.T @ infoMat @ err
+        self.__mEdge.append(Edge(timeBfr,
+                                 timeAft,
+                                 landMarkId,
+                                 jacobMatPrev.T @ infoMat @ jacobMatPrev,
+                                 jacobMatPrev.T @ infoMat @ jacobMatCrnt,
+                                 jacobMatCrnt.T @ infoMat @ jacobMatPrev,
+                                 jacobMatCrnt.T @ infoMat @ jacobMatCrnt,
+                                 jacobMatPrev.T @ infoMat @ err,
+                                 jacobMatCrnt.T @ infoMat @ err
+                                 ))
 
         """
         pp = (t-1) * 3
@@ -289,6 +309,46 @@ class Edge(object):
         self.__vecB[pp:pp + 3, 0][:, np.newaxis] += jacobMatPrev.T @ infoMat @ err
         self.__vecB[pc:pc + 3, 0][:, np.newaxis] += jacobMatCrnt.T @ infoMat @ err
         """
+
+    def updateInfoMatAndVec(self):
+        """"情報行列と情報ベクトルのリサイズ処理
+        引数：
+            なし
+        返り値：
+            なし
+
+        """
+
+        leng = (len(self.__KeepLandMarkTime) + 1) * 3
+
+        if leng > 3:
+
+            self.__mMatH = np.zeros((leng, leng))
+            self.__mVecB = np.zeros((leng, 1))
+
+            # 昇順でソート
+            timeList = sorted(self.__KeepLandMarkTime)
+
+            for edg in self.__mEdge:
+                pp = (timeList.index(edg.mTimeBfr) + 1) * 3
+                pc = (timeList.index(edg.mTimeAft) + 1) * 3
+
+
+                # 情報行列更新
+                self.__mMatH[pp:pp + 3, pp:pp + 3] += edg.mMatH_PrevPrev
+                self.__mMatH[pp:pp + 3, pc:pc + 3] += edg.mMatH_PrevCrnt
+                self.__mMatH[pc:pc + 3, pp:pp + 3] += edg.mMatH_CrntPrev
+                self.__mMatH[pc:pc + 3, pc:pc + 3] += edg.mMatH_CrntCrnt
+
+                # 情報ベクトル更新
+                self.__mVecB[pp:pp + 3, 0][:, np.newaxis] += edg.mVecB_Prev
+                self.__mVecB[pc:pc + 3, 0][:, np.newaxis] += edg.mVecB_Crnt
+
+
+            # クリア
+            self.__KeepLandMarkId = []
+            self.__KeepLandMarkTime = []
+
 
     def __calcRelativePoseByRobotPose(self, aPoseCrnt, aPosePrev):
         """ロボットの推定姿勢による、相対姿勢算出
@@ -358,22 +418,6 @@ class Edge(object):
                         [pt]])
         return rel
 
-    def __resizeInfoMatAndVec(self, aCnt):
-        """"情報行列と情報ベクトルのリサイズ処理
-        引数：
-            なし
-        返り値：
-            なし
-
-        """
-        # 空の情報行列と情報ベクトルを作成
-        matZeroVer = np.zeros((aCnt-1 * 3, 3))
-        matZeroHor = np.zeros((3, aCnt * 3))
-        vecZero = np.zeros((3, 1))
-
-        Edge.__mMatH = np.hstack((Edge.__mMatH, matZeroVer))
-        Edge.__mMatH = np.vstack((Edge.__mMatH, matZeroHor))
-        Edge.__mVecB = np.vstack((Edge.__mVecB, vecZero))
 
 
     @classmethod
@@ -415,6 +459,7 @@ class Robot(object):
         self.__mScnSnsr = ScanSensor(aScanRng, aScanAng, aLandMarks)
 #        self.__mMvMdl = mm.MotionModel(aDt, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)
         self.__mMvMdl = mm.MotionModel(aDt, 0.0000001, 0.0000001, 0.0000001, 0.0000001, 0.0000001, 0.0000001)
+        self.__mTrjEst = TrajectoryEstimator()
 
         #---------- 制御周期 ----------
         self.__mDt = aDt
@@ -493,15 +538,16 @@ class Robot(object):
 
     def estimateOpticalTrajectory(self):
 
-#        Edge.clearInfoMatAndVec()
 
-        pos_edges = []
         lm_num = self.__mScnSnsr.getLandMarkNum()
         for i in range(lm_num):
             heobj_list = list(filter(lambda obj: obj.mLandMarkId == i, self.__mHalfEdges))
             pair = list(itertools.combinations(heobj_list,2))
             for p in pair:
-                pos_edges.append(Edge(p[0], p[1], self.__mPosesGues))
+                self.__mTrjEst.setPairObs(p[0], p[1], self.__mPosesGues)
+
+        # 情報行列と情報ベクトル更新
+        self.__mTrjEst.updateInfoMatAndVec()
 
         """
         pos_edges = []
