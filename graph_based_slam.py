@@ -21,6 +21,11 @@ from matplotlib import animation, patches
 class ScanSensor(object):
     """スキャンセンサclass"""
 
+    __DIST_NOISE = 0.001  # ランドマーク距離雑音[%]
+    __R_DIST = __DIST_NOISE / 100  # ランドマーク距離雑音ゲイン
+    __R_DIR_SIGMA = 0.0000001  # ランドマーク観測方向雑音標準偏差[rad]
+    __R_ORIENT_SIGMA = 0.0000001  # ランドマーク向き雑音標準偏差[rad]
+
     def __init__(self, aRange_m, aAngle_rad, aLandMarks):
         """"コンストラクタ
         引数：
@@ -54,10 +59,6 @@ class ScanSensor(object):
 #        self.__R_DIST = self.__DIST_NOISE / 100  # ランドマーク距離雑音ゲイン
 #        self.__R_DIR_SIGMA = 3 * np.pi / 180  # ランドマーク観測方向雑音標準偏差[rad]
 #        self.__R_ORIENT_SIGMA = 3 * np.pi / 180  # ランドマーク向き雑音標準偏差[rad]
-        self.__DIST_NOISE = 0.001  # ランドマーク距離雑音[%]
-        self.__R_DIST = self.__DIST_NOISE / 100  # ランドマーク距離雑音ゲイン
-        self.__R_DIR_SIGMA = 0.0000001  # ランドマーク観測方向雑音標準偏差[rad]
-        self.__R_ORIENT_SIGMA = 0.0000001  # ランドマーク向き雑音標準偏差[rad]
 
 
     def scan(self, aPose):
@@ -101,7 +102,8 @@ class ScanSensor(object):
 
         return rotmat @ aCov @ rotmat.T
 
-    def getLandMarkCovMatrixOnMeasurementSys(self, aLandMark):
+    @classmethod
+    def getLandMarkCovMatrixOnMeasurementSys(cls, aLandMark):
         """計測座標系におけるランドマークの共分散行列取得
         引数：
             aPose：世界座標系でのロボット姿勢
@@ -119,16 +121,17 @@ class ScanSensor(object):
                 2：y軸の共分散
                 3：θ方向の共分散
         """
-        dist = aLandMark[0] * self.__R_DIST
-        dir_cov = (aLandMark[0] * np.sin(self.__R_DIR_SIGMA)) ** 2
-        orient_cov = self.__R_DIR_SIGMA ** 2 + self.__R_ORIENT_SIGMA ** 2
+        dist = aLandMark[0] * ScanSensor.__R_DIST
+        dir_cov = (aLandMark[0] * np.sin(ScanSensor.__R_DIR_SIGMA)) ** 2
+        orient_cov = ScanSensor.__R_DIR_SIGMA ** 2 + ScanSensor.__R_ORIENT_SIGMA ** 2
         covMat = np.array([[dist ** 2, 0, 0         ],
                            [0, dir_cov, 0         ],
                            [0, 0, orient_cov]])
 
         return covMat
 
-    def tfMeasurement2World(self, aCovMat, aLandMarkDir, aRobotDir):
+    @classmethod
+    def tfMeasurement2World(cls, aCovMat, aLandMarkDir, aRobotDir):
         """計測座標系→世界座標系変換
         引数：
             aCovMat：共分散行列
@@ -249,29 +252,29 @@ class Edge(object):
 
 
         # 計測座標系での情報行列算出
-        lmCovCrntM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPoseAft)
-        lmCovCrntW = self.__mScnSnsr.tfMeasurement2World(lmCovCrntM, obsPoseAft[1], rbtPoseAft[2, 0])
-        lmCovPrevM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPoseBfr)
-        lmCovPrevW = self.__mScnSnsr.tfMeasurement2World(lmCovPrevM, obsPoseBfr[1], rbtPoseBfr[2, 0])
+        lmCovCrntM = ScanSensor.getLandMarkCovMatrixOnMeasurementSys(obsPoseAft)
+        lmCovCrntW = ScanSensor.tfMeasurement2World(lmCovCrntM, obsPoseAft[1], rbtPoseAft[2, 0])
+        lmCovPrevM = ScanSensor.getLandMarkCovMatrixOnMeasurementSys(obsPoseBfr)
+        lmCovPrevW = ScanSensor.tfMeasurement2World(lmCovPrevM, obsPoseBfr[1], rbtPoseBfr[2, 0])
         infoMat = np.linalg.inv(lmCovCrntW + lmCovPrevW)
 
         # ヤコビアン算出
         theta = rbtPoseBfr[2, 0] + obsPoseBfr[1]
         jacobMatPrev = np.array([[-1,  0,  obsPoseBfr[0] * np.sin(theta)],
                                  [ 0, -1, -obsPoseBfr[0] * np.cos(theta)],
-                                 [ 0,  0, -1                             ]])
+                                 [ 0,  0, -1                            ]])
         theta = rbtPoseAft[2, 0] + obsPoseAft[1]
         jacobMatCrnt = np.array([[ 1,  0, -obsPoseAft[0] * np.sin(theta)],
                                  [ 0,  1,  obsPoseAft[0] * np.cos(theta)],
-                                 [ 0,  0,  1                             ]])
+                                 [ 0,  0,  1                            ]])
 
 
         self.__matH_PrevPrev = jacobMatPrev.T @ infoMat @ jacobMatPrev
         self.__matH_PrevCrnt = jacobMatPrev.T @ infoMat @ jacobMatCrnt
         self.__matH_CrntPrev = jacobMatCrnt.T @ infoMat @ jacobMatPrev
         self.__matH_CrntCrnt = jacobMatCrnt.T @ infoMat @ jacobMatCrnt
-        self.__vecB_Prev[:, np.newaxis] = (jacobMatPrev.T @ infoMat @ err)
-        self.__vecB_Crnt[:, np.newaxis] = (jacobMatCrnt.T @ infoMat @ err)
+        self.__vecB_Prev = jacobMatPrev.T @ infoMat @ err
+        self.__vecB_Crnt = jacobMatCrnt.T @ infoMat @ err
 
         """
         pp = (t-1) * 3
