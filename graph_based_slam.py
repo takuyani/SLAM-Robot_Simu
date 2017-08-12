@@ -324,7 +324,7 @@ class TrajectoryEstimator(object):
             if det != 0.0:
                 delta = - np.linalg.inv(self.__mMatH) @ self.__mVecB
                 #TODO:バグあり
-                aGuessPose += delta
+#                aGuessPose += delta
             else:
                 print("det = 0")
 
@@ -493,7 +493,6 @@ class Robot(object):
 
         # 情報行列と情報ベクトル更新
         self.__mPosesGues = self.__mTrjEst.updateGuessPose(self.__mPosesGues)
-        a = 0
 
 
     def draw(self, aAx1, aAx2):
