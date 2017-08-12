@@ -88,15 +88,6 @@ class ScanSensor(object):
 
         return obsWithNoise, obsWithoutNoise
 
-    def rotateCovariance(self, aCov, aRad):
-        c = np.cos(aRad)
-        s = np.sin(aRad)
-
-        rotmat = np.array([[  c,  -s, 0.0],
-                           [  s,   c, 0.0],
-                           [0.0, 0.0, 1.0]])
-
-        return rotmat @ aCov @ rotmat.T
 
     @classmethod
     def getLandMarkCovMatrixOnMeasurementSys(cls, aLandMark):
@@ -243,11 +234,12 @@ class TrajectoryEstimator(object):
         # 新規に検出されたランドマーク
         if landMarkId not in self.__KeepLandMarkId:
             self.__KeepLandMarkId.append(landMarkId)
-            if timeBfr not in self.__KeepLandMarkTime:
-                self.__KeepLandMarkTime.append(timeBfr)
 
         # 検出された時間を保持
-        self.__KeepLandMarkTime.append(timeAft)
+        if timeBfr not in self.__KeepLandMarkTime:
+            self.__KeepLandMarkTime.append(timeBfr)
+        if timeAft not in self.__KeepLandMarkTime:
+            self.__KeepLandMarkTime.append(timeAft)
 
 
         # ロボット推定姿勢によるエッジ(相対姿勢)算出
@@ -260,7 +252,7 @@ class TrajectoryEstimator(object):
 
         # 姿勢誤差算出
         err = relPoseRbt - relPoseObs
-        print("error:ID<{0}>,  x = {1:.3f}[m], y = {2:.3f}[m], θ = {3:.3f}[deg]".format(landMarkId, err[0, 0], err[1, 0], np.rad2deg(err[2, 0])))
+#        print("error:ID<{0}>,  x = {1:.3f}[m], y = {2:.3f}[m], θ = {3:.3f}[deg]".format(landMarkId, err[0, 0], err[1, 0], np.rad2deg(err[2, 0])))
 
 
         # 計測座標系での情報行列算出
@@ -272,14 +264,13 @@ class TrajectoryEstimator(object):
 
         # ヤコビアン算出
         theta = rbtPoseBfr[2, 0] + obsPoseBfr[1]
-        jacobMatPrev = np.array([[-1,  0,  obsPoseBfr[0] * np.sin(theta)],
+        jacobMatPrev = np.array([[-1,  0, obsPoseBfr[0] * np.sin(theta)],
                                  [ 0, -1, -obsPoseBfr[0] * np.cos(theta)],
                                  [ 0,  0, -1                            ]])
         theta = rbtPoseAft[2, 0] + obsPoseAft[1]
         jacobMatCrnt = np.array([[ 1,  0, -obsPoseAft[0] * np.sin(theta)],
                                  [ 0,  1,  obsPoseAft[0] * np.cos(theta)],
                                  [ 0,  0,  1                            ]])
-
 
         self.__mEdge.append(Edge(timeBfr,
                                  timeAft,
@@ -319,7 +310,6 @@ class TrajectoryEstimator(object):
                 pp = (timeList.index(edg.mTimeBfr) + 1) * 3
                 pc = (timeList.index(edg.mTimeAft) + 1) * 3
 
-
                 # 情報行列更新
                 self.__mMatH[pp:pp + 3, pp:pp + 3] += edg.mMatH_PrevPrev
                 self.__mMatH[pp:pp + 3, pc:pc + 3] += edg.mMatH_PrevCrnt
@@ -330,11 +320,13 @@ class TrajectoryEstimator(object):
                 self.__mVecB[pp:pp + 3, 0][:, np.newaxis] += edg.mVecB_Prev
                 self.__mVecB[pc:pc + 3, 0][:, np.newaxis] += edg.mVecB_Crnt
 
-            #TODO:バグあり
             det = np.linalg.det(self.__mMatH)
-            aaa = np.linalg.inv(self.__mMatH)
-            delta = - np.linalg.inv(self.__mMatH) @ self.__mVecB
-            aGuessPose += delta
+            if det != 0.0:
+                delta = - np.linalg.inv(self.__mMatH) @ self.__mVecB
+                #TODO:バグあり
+                aGuessPose += delta
+            else:
+                print("det = 0")
 
             # クリア
             self.__KeepLandMarkId = []
