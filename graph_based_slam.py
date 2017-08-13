@@ -22,10 +22,15 @@ class ScanSensor(object):
     """スキャンセンサclass"""
 
     # 観測雑音定義
-    __DIST_NOISE = 10  # ランドマーク距離雑音[%]
+#    __DIST_NOISE = 10  # ランドマーク距離雑音[%]
+#    __R_DIST = __DIST_NOISE / 100  # ランドマーク距離雑音ゲイン
+#    __R_DIR_SIGMA = 3 * np.pi / 180  # ランドマーク観測方向雑音標準偏差[rad]
+#    __R_ORIENT_SIGMA = 3 * np.pi / 180  # ランドマーク向き雑音標準偏差[rad]
+
+    __DIST_NOISE = 0.1  # ランドマーク距離雑音[%]
     __R_DIST = __DIST_NOISE / 100  # ランドマーク距離雑音ゲイン
-    __R_DIR_SIGMA = 3 * np.pi / 180  # ランドマーク観測方向雑音標準偏差[rad]
-    __R_ORIENT_SIGMA = 3 * np.pi / 180  # ランドマーク向き雑音標準偏差[rad]
+    __R_DIR_SIGMA = 0.01  # ランドマーク観測方向雑音標準偏差[rad]
+    __R_ORIENT_SIGMA = 0.01  # ランドマーク向き雑音標準偏差[rad]
 
     def __init__(self, aRange_m, aAngle_rad, aLandMarks):
         """"コンストラクタ
@@ -293,22 +298,21 @@ class TrajectoryEstimator(object):
 
         """
 
-        leng = (len(self.__KeepLandMarkTime) + 1) * 3
+        strt = aGuessPose[0]
+        estPose = [EstPose(0, strt[0, 0], strt[1, 0], strt[2, 0])]
+        leng = len(self.__KeepLandMarkTime) * 3
 
         if leng > 3:
 
             self.__mMatH = np.zeros((leng, leng))
             self.__mVecB = np.zeros((leng, 1))
 
-            # ロボットの初期位置が動かないようにする
-            self.__mMatH[0:3,0:3] += np.identity(3)*10000
-
             # 昇順でソート
             timeList = sorted(self.__KeepLandMarkTime)
 
             for edg in self.__mEdge:
-                pp = (timeList.index(edg.mTimeBfr) + 1) * 3
-                pc = (timeList.index(edg.mTimeAft) + 1) * 3
+                pp = timeList.index(edg.mTimeBfr) * 3
+                pc = timeList.index(edg.mTimeAft) * 3
 
                 # 情報行列更新
                 self.__mMatH[pp:pp + 3, pp:pp + 3] += edg.mMatH_PrevPrev
@@ -323,8 +327,13 @@ class TrajectoryEstimator(object):
             det = np.linalg.det(self.__mMatH)
             if det != 0.0:
                 delta = - np.linalg.inv(self.__mMatH) @ self.__mVecB
-                #TODO:バグあり
-#                aGuessPose += delta
+                for i, tm in enumerate(self.__KeepLandMarkTime):
+                    guess = aGuessPose[tm]
+                    px = float(guess[0, 0] + delta[i * 3])
+                    py = float(guess[1, 0] + delta[i * 3 + 1])
+                    pt = float(guess[2, 0] + delta[i * 3 + 2])
+                    estPose.append(EstPose(tm, px, py, pt))
+
             else:
                 print("det = 0")
 
@@ -332,7 +341,7 @@ class TrajectoryEstimator(object):
             self.__KeepLandMarkId = []
             self.__KeepLandMarkTime = []
 
-        return aGuessPose
+        return estPose
 
 
     def __calcRelativePoseByRobotPose(self, aPoseCrnt, aPosePrev):
@@ -404,7 +413,13 @@ class TrajectoryEstimator(object):
         return rel
 
 
-
+class EstPose(object):
+    """推定姿勢class"""
+    def __init__(self, aTime, aPx, aPy, aPtheta):
+        self.mTime = aTime
+        self.mPose = np.array([[aPx],
+                               [aPy],
+                               [aPtheta]])
 
 class Robot(object):
     """ロボットclass"""
@@ -419,8 +434,7 @@ class Robot(object):
             aDt：演算周期[sec]
         """
         self.__mScnSnsr = ScanSensor(aScanRng, aScanAng, aLandMarks)
-#        self.__mMvMdl = mm.MotionModel(aDt, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)
-        self.__mMvMdl = mm.MotionModel(aDt, 0.0000001, 0.0000001, 0.0000001, 0.0000001, 0.0000001, 0.0000001)
+        self.__mMvMdl = mm.MotionModel(aDt, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)
         self.__mTrjEst = TrajectoryEstimator()
 
         #---------- 制御周期 ----------
@@ -469,6 +483,7 @@ class Robot(object):
         self.__mPosesActu.append(poseActu)  # 姿勢（実際値）
         self.__mPosesGues.append(poseGues)  # 姿勢（推定値）
 
+        self.__mTime += 1
 
         obsActuCrnt, obsTrueCrnt = self.__mScnSnsr.scan(poseActu)
 
@@ -478,7 +493,6 @@ class Robot(object):
         self.__mObsActu.append(obsActuCrnt)  # 観測結果
         self.__mObsTrue.append(obsTrueCrnt)  # 観測結果
 
-        self.__mTime += 1
 
 
     def estimateOpticalTrajectory(self):
@@ -492,7 +506,7 @@ class Robot(object):
                 self.__mTrjEst.setPairObs(p[0], p[1], self.__mPosesGues)
 
         # 情報行列と情報ベクトル更新
-        self.__mPosesGues = self.__mTrjEst.updateGuessPose(self.__mPosesGues)
+        self.__EstPose = self.__mTrjEst.updateGuessPose(self.__mPosesGues)
 
 
     def draw(self, aAx1, aAx2):
@@ -501,6 +515,9 @@ class Robot(object):
         self.__drawPoses(aAx1, "red", "Guess", self.__mPosesGues)
         self.__drawPoses(aAx1, "blue", "Actual", self.__mPosesActu)
         self.__drawActualLandMark(aAx1)
+
+        est = [e.mPose for e in self.__EstPose]
+        self.__drawPoses(aAx1, "cyan", "Est", est )
 
         self.__debug(aAx2)
 
