@@ -22,15 +22,11 @@ class ScanSensor(object):
     """スキャンセンサclass"""
 
     # 観測雑音定義
-#    __DIST_NOISE = 10  # ランドマーク距離雑音[%]
-#    __R_DIST = __DIST_NOISE / 100  # ランドマーク距離雑音ゲイン
-#    __R_DIR_SIGMA = 3 * np.pi / 180  # ランドマーク観測方向雑音標準偏差[rad]
-#    __R_ORIENT_SIGMA = 3 * np.pi / 180  # ランドマーク向き雑音標準偏差[rad]
-
-    __DIST_NOISE = 0.1  # ランドマーク距離雑音[%]
+    __DIST_NOISE = 3  # ランドマーク距離雑音[%]
     __R_DIST = __DIST_NOISE / 100  # ランドマーク距離雑音ゲイン
-    __R_DIR_SIGMA = 0.01  # ランドマーク観測方向雑音標準偏差[rad]
-    __R_ORIENT_SIGMA = 0.01  # ランドマーク向き雑音標準偏差[rad]
+    __R_DIR_SIGMA = 3 * np.pi / 180  # ランドマーク観測方向雑音標準偏差[rad]
+    __R_ORIENT_SIGMA = 3 * np.pi / 180  # ランドマーク向き雑音標準偏差[rad]
+
 
     def __init__(self, aRange_m, aAngle_rad, aLandMarks):
         """"コンストラクタ
