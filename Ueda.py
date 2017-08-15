@@ -225,16 +225,16 @@ class Edge:
         # cov1（姿勢1でのロボット座標系で定義）を回転して世界座標系の向きにするための回転行列
         c = math.cos(obs1.rt + obs1.ldir)
         s = math.sin(obs1.rt + obs1.ldir)
-        self.rot1 = np.array([[  c,s,0],
-                                             [-s,c,0],
-                                             [ 0,0,1]])
+        self.rot1 = np.array([[ c, -s, 0],
+                              [ s,  c, 0],
+                              [ 0,  0, 1]])
 
         # cov2（姿勢2でのロボット座標系で定義）を回転して世界座標系の向きにするための回転行列
         c = math.cos(obs1.rt + obs1.ldir + obs2.lori - obs1.lori - math.pi)
         s = math.sin(obs1.rt + obs1.ldir)
-        self.rot2 = np.array([[  c,s,0],
-                                             [-s,c,0],
-                                             [ 0,0,1]])
+        self.rot2 = np.array([[ c, -s, 0],
+                              [ s,  c, 0],
+                              [ 0,  0, 1]])
 
         # 二つのランドマーク観測の誤差を世界座標系で足し合わせる　-> 2姿勢間の相対姿勢に関する共分散行列になっている
         #（あんまり自信がない）
@@ -243,8 +243,8 @@ class Edge:
         self.cov = (self.rot1).dot(self.cov1).dot((self.rot1).T) + (self.rot2).dot(self.cov2).dot((self.rot2).T)
         # covから情報行列を作る
         # TODO:
-#        self.info = np.linalg.inv(self.cov)
-        self.info = np.identity(len(self.cov))
+        self.info = np.linalg.inv(self.cov)
+#        self.info = np.identity(len(self.cov))
 
         # デッドレコニング情報から得られるロボットの姿勢とランドマーク観測から推定されるロボットの姿勢の差をとって誤差とする
         self.ex = obs2.rx - obs1.rx - self.hat_x
@@ -404,6 +404,8 @@ if __name__ == '__main__':
 
         # どれだけ姿勢の推定値を変更するかは、以下の計算から算出できる（情報行列の逆行列に情報ベクトルをかけてマイナス）
         dbg_cond = np.linalg.cond(matH)
+        dbg_det = np.linalg.det(matH)
+        print("matH_cond: %f, matH_det: %f" % (dbg_cond, dbg_det))
         matH_inv = np.linalg.inv(matH)
         bb = matH @ matH_inv
         delta = - np.linalg.inv(matH).dot(vecb)

@@ -23,10 +23,10 @@ class ScanSensor(object):
     """スキャンセンサclass"""
 
     # 観測雑音定義
-    __DIST_NOISE = 3  # ランドマーク距離雑音[%]
+    __DIST_NOISE = 0.1  # ランドマーク距離雑音[%]
     __R_DIST = __DIST_NOISE / 100  # ランドマーク距離雑音ゲイン
-    __R_DIR_SIGMA = 3 * np.pi / 180  # ランドマーク観測方向雑音標準偏差[rad]
-    __R_ORIENT_SIGMA = 3 * np.pi / 180  # ランドマーク向き雑音標準偏差[rad]
+    __R_DIR_SIGMA = 0.5 * np.pi / 180  # ランドマーク観測方向雑音標準偏差[rad]
+    __R_ORIENT_SIGMA = 0.5 * np.pi / 180  # ランドマーク向き雑音標準偏差[rad]
 
 
     def __init__(self, aRange_m, aAngle_rad, aLandMarks):
@@ -76,9 +76,8 @@ class ScanSensor(object):
         dirLm_rad = np.arctan2(robotLandMarks[:, 1], robotLandMarks[:, 0])  # ランドマーク観測方向算出
         orientLm_rad = np.ones(robotLandMarks.shape[0]) * (tf.BASE_ANG - aPose[2, 0])  # ランドマーク向き算出
 
-        upperRad = tf.BASE_ANG + self.__mScanAngle_rad
-        lowerRad = tf.BASE_ANG - self.__mScanAngle_rad
-        self.__mObsFlg = [ True if (distLm[i] <= self.__mScanRange_m and (lowerRad <= dirLm_rad[i] and dirLm_rad[i] <= upperRad)) else False for i in range(len(dirLm_rad))]
+        scanRad = tf.BASE_ANG + self.__mScanAngle_rad
+        self.__mObsFlg = [ True if (distLm[i] <= self.__mScanRange_m and (robotLandMarks[i, 1] >= robotLandMarks[i, 0] * np.tan(scanRad))) else False for i in range(len(dirLm_rad))]
 
         for i, flg in enumerate(self.__mObsFlg):
             if (flg == True):
@@ -311,7 +310,7 @@ class TrajectoryEstimator(object):
             self.__mVecB = np.zeros((leng, 1))
 
             #TODO:後で削除
-            self.__mMatH[0:3,0:3] += np.identity(3)*100
+            self.__mMatH[0:3,0:3] += np.identity(3)*10000
 
             # 昇順でソート
             timeList = sorted(self.__KeepLandMarkTime)
@@ -332,7 +331,7 @@ class TrajectoryEstimator(object):
 
             det = np.linalg.det(self.__mMatH)
             dbg_cond = np.linalg.cond(self.__mMatH)
-#            if det != 0.0 and dbg_cond < 10 ** 6:
+#            if det != 0.0 and dbg_cond < 10 ** 5:
             if det != 0.0:
                 #TODO:単位行列にならない？
                 inv = np.linalg.inv(self.__mMatH)
@@ -449,7 +448,8 @@ class Robot(object):
             aDt：演算周期[sec]
         """
         self.__mScnSnsr = ScanSensor(aScanRng, aScanAng, aLandMarks)
-        self.__mMvMdl = mm.MotionModel(aDt, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)
+#        self.__mMvMdl = mm.MotionModel(aDt, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)
+        self.__mMvMdl = mm.MotionModel(aDt, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01)
         self.__mTrjEst = TrajectoryEstimator()
 
         #---------- 制御周期 ----------
@@ -644,8 +644,8 @@ class Robot(object):
 
 
 # スキャンセンサモデル
-SCN_SENS_RANGE_m = 10.0  # 走査距離[m]
-SCN_SENS_ANGLE_rps = np.deg2rad(70.0)  # 走査角度[rad]
+SCN_SENS_RANGE_m = 5.0  # 走査距離[m]
+SCN_SENS_ANGLE_rps = np.deg2rad(120.0)  # 走査角度[rad]
 RADIUS_m = 10.0  # 周回半径[m]
 
 # ロボット動作モデル
@@ -698,7 +698,7 @@ def graph_based_slam(i, aPeriod_ms):
         print(" コピー")
         gRbt.deepCopy()
 
-    if time_s > 10:
+    if time_s > 2:
         print("input:")
         input()
         print(" 軌跡推定")
