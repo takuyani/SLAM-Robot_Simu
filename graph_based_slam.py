@@ -17,6 +17,7 @@ from mylib import limit
 from mylib import transform as tf
 import motion_model as mm
 from matplotlib import animation, patches
+import copy
 
 class ScanSensor(object):
     """スキャンセンサclass"""
@@ -213,6 +214,9 @@ class TrajectoryEstimator(object):
         self.__KeepLandMarkId = []
         self.__KeepLandMarkTime = []
 
+        # デバッグ用
+        self.__debug_EstPose = []
+
     def setPairObs(self, aObs1, aObs2, aRobotPose):
         landMarkId = aObs1.mLandMarkId
 
@@ -261,7 +265,11 @@ class TrajectoryEstimator(object):
         lmCovCrntW = ScanSensor.tfMeasurement2World(lmCovCrntM, obsPoseAft[1], rbtPoseAft[2, 0])
         lmCovPrevM = ScanSensor.getLandMarkCovMatrixOnMeasurementSys(obsPoseBfr)
         lmCovPrevW = ScanSensor.tfMeasurement2World(lmCovPrevM, obsPoseBfr[1], rbtPoseBfr[2, 0])
-        infoMat = np.linalg.inv(lmCovCrntW + lmCovPrevW)
+        sumCov = lmCovCrntW + lmCovPrevW
+        infoMat = np.linalg.inv(sumCov)
+#        infoMat = np.identity(len(sumCov))
+        dbg_cov = sumCov @ infoMat
+        dbg_cond = np.linalg.cond(sumCov)
 
         # ヤコビアン算出
         theta = rbtPoseBfr[2, 0] + obsPoseBfr[1]
@@ -285,7 +293,7 @@ class TrajectoryEstimator(object):
                                  ))
 
 
-    def updateGuessPose(self, aGuessPose):
+    def updateGuessPose(self, aEstPose):
         """"情報行列と情報ベクトルのリサイズ処理
         引数：
             なし
@@ -293,8 +301,7 @@ class TrajectoryEstimator(object):
             なし
 
         """
-
-        strt = aGuessPose[0]
+        strt = aEstPose[0]
         estPose = [EstPose(0, strt[0, 0], strt[1, 0], strt[2, 0])]
         leng = len(self.__KeepLandMarkTime) * 3
 
@@ -302,6 +309,9 @@ class TrajectoryEstimator(object):
 
             self.__mMatH = np.zeros((leng, leng))
             self.__mVecB = np.zeros((leng, 1))
+
+            #TODO:後で削除
+            self.__mMatH[0:3,0:3] += np.identity(3)*100
 
             # 昇順でソート
             timeList = sorted(self.__KeepLandMarkTime)
@@ -321,14 +331,23 @@ class TrajectoryEstimator(object):
                 self.__mVecB[pc:pc + 3, 0][:, np.newaxis] += edg.mVecB_Crnt
 
             det = np.linalg.det(self.__mMatH)
+            dbg_cond = np.linalg.cond(self.__mMatH)
+#            if det != 0.0 and dbg_cond < 10 ** 6:
             if det != 0.0:
-                delta = - np.linalg.inv(self.__mMatH) @ self.__mVecB
+                #TODO:単位行列にならない？
+                inv = np.linalg.inv(self.__mMatH)
+                ii= inv @ self.__mMatH
+                ii2 = np.linalg.solve(self.__mMatH, numpy.identity(len(self.__mMatH))).dot(self.__mMatH)
+                delta = - inv @ self.__mVecB
                 for i, tm in enumerate(self.__KeepLandMarkTime):
-                    guess = aGuessPose[tm]
-                    px = float(guess[0, 0] + delta[i * 3])
-                    py = float(guess[1, 0] + delta[i * 3 + 1])
-                    pt = float(guess[2, 0] + delta[i * 3 + 2])
+                    est = aEstPose[tm]
+                    px = float(est[0, 0] + delta[i * 3])
+                    py = float(est[1, 0] + delta[i * 3 + 1])
+                    pt = float(est[2, 0] + delta[i * 3 + 2])
                     estPose.append(EstPose(tm, px, py, pt))
+                    aEstPose[tm][0, 0] += delta[i * 3]
+                    aEstPose[tm][1, 0] += delta[i * 3 + 1]
+                    aEstPose[tm][2, 0] += delta[i * 3 + 2]
 
             else:
                 print("det = 0")
@@ -440,6 +459,8 @@ class Robot(object):
         #---------- 姿勢 ----------
         self.__mPosesActu = [aPose]  # 姿勢（実際値）
         self.__mPosesGues = [aPose]  # 姿勢（推定値）
+        self.__mPosesEst = []
+        self.__mPosesEstDbg = []
         #---------- 制御 ----------
         self.__mCtr = []
         #---------- 観測 ----------
@@ -469,7 +490,6 @@ class Robot(object):
         return self.__mPosesActu[-1]
 
     def move(self, aV, aW):
-        print("[移動]")
 
         poseActu = self.__mMvMdl.moveWithNoise(self.__mPosesActu[-1], aV, aW)
         poseGues = self.__mMvMdl.moveWithoutNoise(self.__mPosesGues[-1], aV, aW)
@@ -490,19 +510,20 @@ class Robot(object):
         self.__mObsTrue.append(obsTrueCrnt)  # 観測結果
 
 
+    def deepCopy(self):
+        self.__mPosesEst = copy.deepcopy(self.__mPosesGues)
 
     def estimateOpticalTrajectory(self):
-
 
         lm_num = self.__mScnSnsr.getLandMarkNum()
         for i in range(lm_num):
             heobj_list = list(filter(lambda obj: obj.mLandMarkId == i, self.__mHalfEdges))
             pair = list(itertools.combinations(heobj_list,2))
             for p in pair:
-                self.__mTrjEst.setPairObs(p[0], p[1], self.__mPosesGues)
+                self.__mTrjEst.setPairObs(p[0], p[1], self.__mPosesEst)
 
         # 情報行列と情報ベクトル更新
-        self.__EstPose = self.__mTrjEst.updateGuessPose(self.__mPosesGues)
+        self.__mPosesEstDbg = self.__mTrjEst.updateGuessPose(self.__mPosesEst)
 
 
     def draw(self, aAx1, aAx2):
@@ -512,8 +533,9 @@ class Robot(object):
         self.__drawPoses(aAx1, "blue", "Actual", self.__mPosesActu)
         self.__drawActualLandMark(aAx1)
 
-        est = [e.mPose for e in self.__EstPose]
-        self.__drawPoses(aAx1, "cyan", "Est", est )
+        if len(self.__mPosesEstDbg) > 0:
+            est = [self.__mPosesEst[e.mTime] for e in self.__mPosesEstDbg]
+            self.__drawPoses(aAx1, "cyan", "Est", est )
 
         self.__debug(aAx2)
 
@@ -638,7 +660,7 @@ LAND_MARKS = np.array([[ 0.0, 10.0],
                        [ 0.0, 0.0]])
 
 # アニメーション更新周期[msec]
-PERIOD_ms = 100
+PERIOD_ms = 1000
 
 x_base = np.array([[10.0],  # x座標[m]
                    [ 0.0],  # y座標[m]
@@ -647,6 +669,8 @@ x_base = np.array([[10.0],  # x座標[m]
 gRbt = Robot(x_base, PERIOD_ms / 1000, SCN_SENS_RANGE_m, SCN_SENS_ANGLE_rps, LAND_MARKS)
 
 time_s = 0
+
+Debug_flag = False
 
 def graph_based_slam(i, aPeriod_ms):
     """"Graph-based SLAM処理
@@ -660,22 +684,38 @@ def graph_based_slam(i, aPeriod_ms):
     global RADIUS_m
     global OMEGA_rps
     global VEL_mps
+    global Debug_flag
 
-    time_s += aPeriod_ms / 1000
 
-    gRbt.move(VEL_mps, OMEGA_rps)
-    x = gRbt.getPose()
-    gRbt.estimateOpticalTrajectory()
+    print("TIME:{0:.3f}[s]".format(time_s))
 
+    if Debug_flag == False:
+        time_s += aPeriod_ms / 1000
+
+        print(" 移動")
+        gRbt.move(VEL_mps, OMEGA_rps)
+        x = gRbt.getPose()
+        print(" コピー")
+        gRbt.deepCopy()
+
+    if time_s > 10:
+        print("input:")
+        input()
+        print(" 軌跡推定")
+        gRbt.estimateOpticalTrajectory()
+        Debug_flag = True
+
+    print(" プロットクリア")
     plt.cla()
 
     # サブプロットを追加
     ax1 = plt.subplot2grid((1, 2), (0, 0), aspect = "equal", adjustable = "box-forced")
     ax2 = plt.subplot2grid((1, 2), (0, 1), aspect = "equal", adjustable = "box-forced")
 
+    print(" 描写1")
     gRbt.draw(ax1, ax2)
 
-    print("time:{0:.3f}[s] x = {1:.3f}[m], y = {2:.3f}[m], θ = {3:.3f}[deg]".format(time_s, x[0, 0], x[1, 0], np.rad2deg(x[2, 0])))
+#    print(" x = {0:.3f}[m], y = {1:.3f}[m], θ = {2:.3f}[deg]".format(x[0, 0], x[1, 0], np.rad2deg(x[2, 0])))
 
     ax1.set_xlabel("x [m]")
     ax1.set_ylabel("y [m]")
