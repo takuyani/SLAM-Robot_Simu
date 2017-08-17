@@ -76,7 +76,8 @@ class ScanSensor(object):
         dirLm_rad = np.arctan2(robotLandMarks[:, 1], robotLandMarks[:, 0])  # ランドマーク観測方向算出
         orientLm_rad = np.ones(robotLandMarks.shape[0]) * (tf.BASE_ANG - aPose[2, 0])  # ランドマーク向き算出
 
-        scanRad = tf.BASE_ANG + self.__mScanAngle_rad
+        #TODO:バグあり
+        scanRad = tf.BASE_ANG - self.__mScanAngle_rad
         self.__mObsFlg = [ True if (distLm[i] <= self.__mScanRange_m and (robotLandMarks[i, 1] >= robotLandMarks[i, 0] * np.tan(scanRad))) else False for i in range(len(dirLm_rad))]
 
         for i, flg in enumerate(self.__mObsFlg):
@@ -341,7 +342,7 @@ class TrajectoryEstimator(object):
                 ii= inv @ self.__mMatH
                 ii2 = np.linalg.solve(self.__mMatH, numpy.identity(len(self.__mMatH))).dot(self.__mMatH)
                 delta = - inv @ self.__mVecB
-                for i, tm in enumerate(self.__KeepLandMarkTime):
+                for i, tm in enumerate(timeList):
 #                    est = aEstPose[tm]
 #                    px = float(est[0, 0] + delta[i * 3])
 #                    py = float(est[1, 0] + delta[i * 3 + 1])
@@ -654,8 +655,8 @@ class Robot(object):
 
 
 # スキャンセンサモデル
-SCN_SENS_RANGE_m = 30.0  # 走査距離[m]
-SCN_SENS_ANGLE_rps = np.deg2rad(170.0)  # 走査角度[rad]
+SCN_SENS_RANGE_m = 10.0  # 走査距離[m]
+SCN_SENS_ANGLE_rps = np.deg2rad(60.0)  # 走査角度[rad]
 RADIUS_m = 10.0  # 周回半径[m]
 
 # ロボット動作モデル
@@ -663,13 +664,13 @@ OMEGA_rps = np.deg2rad(10.0)  # 角速度[rad/s]
 VEL_mps = RADIUS_m * OMEGA_rps  # 速度[m/s]
 
 # ランドマーク
-#LAND_MARKS = np.array([[ 0.0, 10.0],
-#                       [ 2.0, -3.0],
-#                       [ 5.0, 5.0],
-#                       [-5.0, -1.0],
-#                       [ 0.0, 0.0]])
+LAND_MARKS = np.array([[ 0.0, 10.0],
+                       [ 2.0, -3.0],
+                       [ 5.0, 5.0],
+                       [-5.0, -1.0],
+                       [ 9.0, 3.0]])
 
-LAND_MARKS = np.array([[ 0.0, 0.0]])
+#LAND_MARKS = np.array([[ 0.0, 0.0]])
 
 # アニメーション更新周期[msec]
 PERIOD_ms = 1000
