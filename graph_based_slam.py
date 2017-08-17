@@ -291,6 +291,9 @@ class TrajectoryEstimator(object):
                                  jacobMatCrnt.T @ infoMat @ err
                                  ))
 
+    def getActiveLandMarkTime(self):
+        return sorted(self.__KeepLandMarkTime)
+
 
     def updateGuessPose(self, aEstPose):
         """"情報行列と情報ベクトルのリサイズ処理
@@ -339,11 +342,11 @@ class TrajectoryEstimator(object):
                 ii2 = np.linalg.solve(self.__mMatH, numpy.identity(len(self.__mMatH))).dot(self.__mMatH)
                 delta = - inv @ self.__mVecB
                 for i, tm in enumerate(self.__KeepLandMarkTime):
-                    est = aEstPose[tm]
-                    px = float(est[0, 0] + delta[i * 3])
-                    py = float(est[1, 0] + delta[i * 3 + 1])
-                    pt = float(est[2, 0] + delta[i * 3 + 2])
-                    estPose.append(EstPose(tm, px, py, pt))
+#                    est = aEstPose[tm]
+#                    px = float(est[0, 0] + delta[i * 3])
+#                    py = float(est[1, 0] + delta[i * 3 + 1])
+#                    pt = float(est[2, 0] + delta[i * 3 + 2])
+#                    estPose.append(EstPose(tm, px, py, pt))
                     aEstPose[tm][0, 0] += delta[i * 3]
                     aEstPose[tm][1, 0] += delta[i * 3 + 1]
                     aEstPose[tm][2, 0] += delta[i * 3 + 2]
@@ -352,10 +355,11 @@ class TrajectoryEstimator(object):
                 print("det = 0")
 
             # クリア
+            self.__mEdge = []
             self.__KeepLandMarkId = []
             self.__KeepLandMarkTime = []
 
-        return estPose
+        return aEstPose
 
 
     def __calcRelativePoseByRobotPose(self, aPoseCrnt, aPosePrev):
@@ -448,8 +452,8 @@ class Robot(object):
             aDt：演算周期[sec]
         """
         self.__mScnSnsr = ScanSensor(aScanRng, aScanAng, aLandMarks)
-#        self.__mMvMdl = mm.MotionModel(aDt, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)
-        self.__mMvMdl = mm.MotionModel(aDt, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01)
+        self.__mMvMdl = mm.MotionModel(aDt, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)
+#        self.__mMvMdl = mm.MotionModel(aDt, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01)
         self.__mTrjEst = TrajectoryEstimator()
 
         #---------- 制御周期 ----------
@@ -460,7 +464,7 @@ class Robot(object):
         self.__mPosesActu = [aPose]  # 姿勢（実際値）
         self.__mPosesGues = [aPose]  # 姿勢（推定値）
         self.__mPosesEst = []
-        self.__mPosesEstDbg = []
+        self.__mIsPosesEst = []
         #---------- 制御 ----------
         self.__mCtr = []
         #---------- 観測 ----------
@@ -513,6 +517,7 @@ class Robot(object):
     def deepCopy(self):
         self.__mPosesEst = copy.deepcopy(self.__mPosesGues)
 
+
     def estimateOpticalTrajectory(self):
 
         lm_num = self.__mScnSnsr.getLandMarkNum()
@@ -522,8 +527,11 @@ class Robot(object):
             for p in pair:
                 self.__mTrjEst.setPairObs(p[0], p[1], self.__mPosesEst)
 
+        isTmList = self.__mTrjEst.getActiveLandMarkTime()
+        self.__mIsPosesEst = [ True if i in isTmList else False for i in range(len(self.__mPosesEst)) ]
+
         # 情報行列と情報ベクトル更新
-        self.__mPosesEstDbg = self.__mTrjEst.updateGuessPose(self.__mPosesEst)
+        self.__mPosesEst = self.__mTrjEst.updateGuessPose(self.__mPosesEst)
 
 
     def draw(self, aAx1, aAx2):
@@ -533,8 +541,8 @@ class Robot(object):
         self.__drawPoses(aAx1, "blue", "Actual", self.__mPosesActu)
         self.__drawActualLandMark(aAx1)
 
-        if len(self.__mPosesEstDbg) > 0:
-            est = [self.__mPosesEst[e.mTime] for e in self.__mPosesEstDbg]
+        if len(self.__mIsPosesEst) > 0:
+            est = [ pe for (i, pe) in enumerate(self.__mPosesEst) if self.__mIsPosesEst[i] == True ]
             self.__drawPoses(aAx1, "cyan", "Est", est )
 
         self.__debug(aAx2)
@@ -644,8 +652,8 @@ class Robot(object):
 
 
 # スキャンセンサモデル
-SCN_SENS_RANGE_m = 5.0  # 走査距離[m]
-SCN_SENS_ANGLE_rps = np.deg2rad(120.0)  # 走査角度[rad]
+SCN_SENS_RANGE_m = 30.0  # 走査距離[m]
+SCN_SENS_ANGLE_rps = np.deg2rad(170.0)  # 走査角度[rad]
 RADIUS_m = 10.0  # 周回半径[m]
 
 # ロボット動作モデル
@@ -653,11 +661,14 @@ OMEGA_rps = np.deg2rad(10.0)  # 角速度[rad/s]
 VEL_mps = RADIUS_m * OMEGA_rps  # 速度[m/s]
 
 # ランドマーク
-LAND_MARKS = np.array([[ 0.0, 10.0],
-                       [ 2.0, -3.0],
-                       [ 5.0, 5.0],
-                       [-5.0, -1.0],
-                       [ 0.0, 0.0]])
+#LAND_MARKS = np.array([[ 0.0, 10.0],
+#                       [ 2.0, -3.0],
+#                       [ 5.0, 5.0],
+#                       [-5.0, -1.0],
+#                       [ 0.0, 0.0]])
+
+LAND_MARKS = np.array([[ 0.0, 0.0],
+                       [ 2.0, -3.0]])
 
 # アニメーション更新周期[msec]
 PERIOD_ms = 1000
@@ -698,7 +709,8 @@ def graph_based_slam(i, aPeriod_ms):
         print(" コピー")
         gRbt.deepCopy()
 
-    if time_s > 2:
+#    if time_s > 2:
+    if time_s > 20:
         print("input:")
         input()
         print(" 軌跡推定")
@@ -721,6 +733,8 @@ def graph_based_slam(i, aPeriod_ms):
     ax1.set_ylabel("y [m]")
     ax1.set_title("World")
     ax1.axis("equal", adjustable = "box")
+#    ax1.set_xlim(5, 15)
+#    ax1.set_ylim(-2, 8)
     ax1.grid()
     ax1.legend(fontsize = 10)
 
