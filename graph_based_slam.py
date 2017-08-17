@@ -267,8 +267,6 @@ class TrajectoryEstimator(object):
         sumCov = lmCovCrntW + lmCovPrevW
         infoMat = np.linalg.inv(sumCov)
 #        infoMat = np.identity(len(sumCov))
-        dbg_cov = sumCov @ infoMat
-        dbg_cond = np.linalg.cond(sumCov)
 
         # ヤコビアン算出
         theta = rbtPoseBfr[2, 0] + obsPoseBfr[1]
@@ -334,6 +332,8 @@ class TrajectoryEstimator(object):
 
             det = np.linalg.det(self.__mMatH)
             dbg_cond = np.linalg.cond(self.__mMatH)
+            print("行列式 = {0}".format(det))
+            print("条件数 = {0}".format(dbg_cond))
 #            if det != 0.0 and dbg_cond < 10 ** 5:
             if det != 0.0:
                 #TODO:単位行列にならない？
@@ -350,6 +350,8 @@ class TrajectoryEstimator(object):
                     aEstPose[tm][0, 0] += delta[i * 3]
                     aEstPose[tm][1, 0] += delta[i * 3 + 1]
                     aEstPose[tm][2, 0] += delta[i * 3 + 2]
+
+                print("Δx.T・Δx = {0}".format(float(delta.T @ delta)))
 
             else:
                 print("det = 0")
@@ -667,8 +669,7 @@ VEL_mps = RADIUS_m * OMEGA_rps  # 速度[m/s]
 #                       [-5.0, -1.0],
 #                       [ 0.0, 0.0]])
 
-LAND_MARKS = np.array([[ 0.0, 0.0],
-                       [ 2.0, -3.0]])
+LAND_MARKS = np.array([[ 0.0, 0.0]])
 
 # アニメーション更新周期[msec]
 PERIOD_ms = 1000
@@ -703,10 +704,10 @@ def graph_based_slam(i, aPeriod_ms):
     if Debug_flag == False:
         time_s += aPeriod_ms / 1000
 
-        print(" 移動")
+#        print(" 移動")
         gRbt.move(VEL_mps, OMEGA_rps)
         x = gRbt.getPose()
-        print(" コピー")
+#        print(" コピー")
         gRbt.deepCopy()
 
 #    if time_s > 2:
@@ -717,14 +718,14 @@ def graph_based_slam(i, aPeriod_ms):
         gRbt.estimateOpticalTrajectory()
         Debug_flag = True
 
-    print(" プロットクリア")
+#    print(" プロットクリア")
     plt.cla()
 
     # サブプロットを追加
     ax1 = plt.subplot2grid((1, 2), (0, 0), aspect = "equal", adjustable = "box-forced")
     ax2 = plt.subplot2grid((1, 2), (0, 1), aspect = "equal", adjustable = "box-forced")
 
-    print(" 描写1")
+#    print(" 描写1")
     gRbt.draw(ax1, ax2)
 
 #    print(" x = {0:.3f}[m], y = {1:.3f}[m], θ = {2:.3f}[deg]".format(x[0, 0], x[1, 0], np.rad2deg(x[2, 0])))
