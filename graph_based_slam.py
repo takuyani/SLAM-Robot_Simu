@@ -39,8 +39,7 @@ class ScanSensor(object):
         self.__mScanAngle_rad = aAngle_rad
         self.__mReslAng = int(np.rad2deg(aAngle_rad))
         self.__mLandMarks = aLandMarks
-        self.__mLandMarksNum = aLandMarks.shape[0]
-        self.__mObsFlg = [[False] * self.__mLandMarksNum]
+        self.__mObsFlg = [[False] * len(self.__mLandMarks)]
 
         ang = np.rad2deg(aAngle_rad)
         ofs = np.rad2deg(tf.BASE_ANG)
@@ -76,9 +75,12 @@ class ScanSensor(object):
         dirLm_rad = np.arctan2(robotLandMarks[:, 1], robotLandMarks[:, 0])  # ランドマーク観測方向算出
         orientLm_rad = np.ones(robotLandMarks.shape[0]) * (tf.BASE_ANG - aPose[2, 0])  # ランドマーク向き算出
 
-        #TODO:バグあり
+        # センサの測定範囲内にランドマークが存在するか否かの判定
         scanRad = tf.BASE_ANG - self.__mScanAngle_rad
-        self.__mObsFlg = [ True if (distLm[i] <= self.__mScanRange_m and (robotLandMarks[i, 1] >= robotLandMarks[i, 0] * np.tan(scanRad))) else False for i in range(len(dirLm_rad))]
+        self.__mObsFlg = [ True
+                          if (distLm[i] <= self.__mScanRange_m and (robotLandMarks[i, 1] >= np.absolute(robotLandMarks[i, 0]) * np.tan(scanRad)))
+                          else False
+                          for i in range(len(dirLm_rad))]
 
         for i, flg in enumerate(self.__mObsFlg):
             if (flg == True):
@@ -174,7 +176,7 @@ class ScanSensor(object):
         aAx.scatter(self.__mLandMarks[:, 0], self.__mLandMarks[:, 1], s = 100, c = "yellow", marker = "*", alpha = 0.5, linewidths = "2", edgecolors = "orange", label = "Land Mark(True)")
 
     def getLandMarkNum(self):
-        return self.__mLandMarksNum
+        return len(self.__mLandMarks)
 
 
 class Observation(object):
@@ -656,7 +658,7 @@ class Robot(object):
 
 # スキャンセンサモデル
 SCN_SENS_RANGE_m = 10.0  # 走査距離[m]
-SCN_SENS_ANGLE_rps = np.deg2rad(60.0)  # 走査角度[rad]
+SCN_SENS_ANGLE_rps = np.deg2rad(150.0)  # 走査角度[rad]
 RADIUS_m = 10.0  # 周回半径[m]
 
 # ロボット動作モデル
