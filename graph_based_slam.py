@@ -304,8 +304,6 @@ class TrajectoryEstimator(object):
             なし
 
         """
-        strt = aEstPose[0]
-        estPose = [EstPose(0, strt[0, 0], strt[1, 0], strt[2, 0])]
         leng = len(self.__KeepLandMarkTime) * 3
 
         if leng > 3:
@@ -345,11 +343,6 @@ class TrajectoryEstimator(object):
                 ii2 = np.linalg.solve(self.__mMatH, numpy.identity(len(self.__mMatH))).dot(self.__mMatH)
                 delta = - inv @ self.__mVecB
                 for i, tm in enumerate(timeList):
-#                    est = aEstPose[tm]
-#                    px = float(est[0, 0] + delta[i * 3])
-#                    py = float(est[1, 0] + delta[i * 3 + 1])
-#                    pt = float(est[2, 0] + delta[i * 3 + 2])
-#                    estPose.append(EstPose(tm, px, py, pt))
                     aEstPose[tm][0, 0] += delta[i * 3]
                     aEstPose[tm][1, 0] += delta[i * 3 + 1]
                     aEstPose[tm][2, 0] += delta[i * 3 + 2]
@@ -435,14 +428,6 @@ class TrajectoryEstimator(object):
                         [pt]])
         return rel
 
-
-class EstPose(object):
-    """推定姿勢class"""
-    def __init__(self, aTime, aPx, aPy, aPtheta):
-        self.mTime = aTime
-        self.mPose = np.array([[aPx],
-                               [aPy],
-                               [aPtheta]])
 
 class Robot(object):
     """ロボットclass"""
