@@ -335,8 +335,8 @@ class TrajectoryEstimator(object):
             dbg_cond = np.linalg.cond(self.__mMatH)
             print("行列式 = {0}".format(det))
             print("条件数 = {0}".format(dbg_cond))
-#            if det != 0.0 and dbg_cond < 10 ** 5:
-            if det != 0.0:
+            if det != 0.0 and dbg_cond < 10 ** 15:
+#            if det != 0.0:
                 #TODO:単位行列にならない？
                 inv = np.linalg.inv(self.__mMatH)
                 ii= inv @ self.__mMatH
@@ -472,6 +472,9 @@ class Robot(object):
         self.__mConfidence_interval = 99.0
         self.__mEllipse = error_ellipse.ErrorEllipse(self.__mConfidence_interval)
 
+        self.__mScnSnsr.scan(aPose)
+        self.__observe(self.__mPosesActu, self.__mPosesGues, self.__mTime)
+
 
     def getPose(self):
         """"姿勢取得処理
@@ -485,6 +488,7 @@ class Robot(object):
 
     def move(self, aV, aW):
 
+        # 移動
         poseActu = self.__mMvMdl.moveWithNoise(self.__mPosesActu[-1], aV, aW)
         poseGues = self.__mMvMdl.moveWithoutNoise(self.__mPosesGues[-1], aV, aW)
 
@@ -495,10 +499,15 @@ class Robot(object):
 
         self.__mTime += 1
 
-        obsActuCrnt, obsTrueCrnt = self.__mScnSnsr.scan(poseActu)
+        self.__observe(self.__mPosesActu, self.__mPosesGues, self.__mTime)
+
+
+    def __observe(self, aPoseActu, aPoseGues, aTime):
+
+        obsActuCrnt, obsTrueCrnt = self.__mScnSnsr.scan(aPoseActu[-1])
 
         for obs in obsActuCrnt:
-            self.__mHalfEdges.append(Observation(self.__mTime, obs[0], obs[1], len(self.__mPosesGues)-1))
+            self.__mHalfEdges.append(Observation(aTime, obs[0], obs[1], len(aPoseGues)-1))
 
         self.__mObsActu.append(obsActuCrnt)  # 観測結果
         self.__mObsTrue.append(obsTrueCrnt)  # 観測結果
@@ -643,7 +652,7 @@ class Robot(object):
 
 # スキャンセンサモデル
 SCN_SENS_RANGE_m = 10.0  # 走査距離[m]
-SCN_SENS_ANGLE_rps = np.deg2rad(150.0)  # 走査角度[rad]
+SCN_SENS_ANGLE_rps = np.deg2rad(60.0)  # 走査角度[rad]
 RADIUS_m = 10.0  # 周回半径[m]
 
 # ロボット動作モデル
