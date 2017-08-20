@@ -206,8 +206,10 @@ class Edge(object):
 class TrajectoryEstimator(object):
     """軌跡推定器class"""
 
+    def __init__(self, aPose):
 
-    def __init__(self):
+        self.__mPosesEst = [aPose]
+        self.__mIsObs = [True]
 
         self.__mEdge = []
 
@@ -217,10 +219,14 @@ class TrajectoryEstimator(object):
         self.__KeepLandMarkId = []
         self.__KeepLandMarkTime = []
 
-        # デバッグ用
-        self.__debug_EstPose = []
+    def addPose(self, aPose, aIsObs):
+        self.__mPosesEst.append(aPose)
+        self.__mIsObs.append(aIsObs)
 
-    def setPairObs(self, aObs1, aObs2, aRobotPose):
+    def getPoseLength(self):
+        return len(self.__mPosesEst)
+
+    def setPairObs(self, aObs1, aObs2):
         landMarkId = aObs1.mLandMarkId
 
         if aObs1.mTime > aObs2.mTime:
@@ -228,15 +234,15 @@ class TrajectoryEstimator(object):
             timeBfr = aObs2.mTime
             obsPoseAft = aObs1.mLandMarkPose
             obsPoseBfr = aObs2.mLandMarkPose
-            rbtPoseAft = aRobotPose[aObs1.mRobotPoseId]
-            rbtPoseBfr = aRobotPose[aObs2.mRobotPoseId]
+            rbtPoseAft = self.__mPosesEst[aObs1.mRobotPoseId]
+            rbtPoseBfr = self.__mPosesEst[aObs2.mRobotPoseId]
         else:
             timeAft = aObs2.mTime
             timeBfr = aObs1.mTime
             obsPoseAft = aObs2.mLandMarkPose
             obsPoseBfr = aObs1.mLandMarkPose
-            rbtPoseAft = aRobotPose[aObs2.mRobotPoseId]
-            rbtPoseBfr = aRobotPose[aObs1.mRobotPoseId]
+            rbtPoseAft = self.__mPosesEst[aObs2.mRobotPoseId]
+            rbtPoseBfr = self.__mPosesEst[aObs1.mRobotPoseId]
 
 
         # 新規に検出されたランドマーク
@@ -293,11 +299,11 @@ class TrajectoryEstimator(object):
                                  jacobMatCrnt.T @ infoMat @ err
                                  ))
 
-    def getActiveLandMarkTime(self):
-        return sorted(self.__KeepLandMarkTime)
+    def getEstTrajPose(self):
+        return [ pe for (i, pe) in enumerate(self.__mPosesEst) if self.__mIsObs[i] == True ]
 
 
-    def updateGuessPose(self, aEstPose):
+    def updateGuessPose(self):
         """"情報行列と情報ベクトルのリサイズ処理
         引数：
             なし
@@ -344,15 +350,16 @@ class TrajectoryEstimator(object):
                 ii2 = np.linalg.solve(self.__mMatH, numpy.identity(len(self.__mMatH))).dot(self.__mMatH)
                 delta = - inv @ self.__mVecB
                 for i, tm in enumerate(timeList):
-                    aEstPose[tm][0, 0] += delta[i * 3]
-                    aEstPose[tm][1, 0] += delta[i * 3 + 1]
-                    aEstPose[tm][2, 0] += delta[i * 3 + 2]
+                    self.__mPosesEst[tm][0, 0] += delta[i * 3]
+                    self.__mPosesEst[tm][1, 0] += delta[i * 3 + 1]
+                    self.__mPosesEst[tm][2, 0] += delta[i * 3 + 2]
 
                 delta_sum = float(delta.T @ delta)
 
                 print("Δx.T・Δx = {0}".format(delta_sum))
 
             else:
+                delta_sum = 0.0
                 print("det = 0")
 
             # クリア
@@ -360,7 +367,7 @@ class TrajectoryEstimator(object):
             self.__KeepLandMarkId = []
             self.__KeepLandMarkTime = []
 
-        return aEstPose, delta_sum
+        return delta_sum
 
 
     def __calcRelativePoseByRobotPose(self, aPoseCrnt, aPosePrev):
@@ -447,7 +454,7 @@ class Robot(object):
         self.__mScnSnsr = ScanSensor(aScanRng, aScanAng, aLandMarks)
         self.__mMvMdl = mm.MotionModel(aDt, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)
 #        self.__mMvMdl = mm.MotionModel(aDt, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01)
-        self.__mTrjEst = TrajectoryEstimator()
+        self.__mTrjEst = TrajectoryEstimator(aPose)
 
         #---------- 制御周期 ----------
         self.__mDt = aDt
@@ -500,11 +507,10 @@ class Robot(object):
         self.__mCtr.append(np.array([aV, aW]))  # 制御
         self.__mPosesActu.append(poseActu)  # 姿勢（実際値）
         self.__mPosesGues.append(poseGues)  # 姿勢（推定値）
-        self.__mPosesEst.append(deepcopy(poseGues))
 
         self.__mTime += 1
-        self.__observe(self.__mPosesActu[-1], len(self.__mPosesGues)-1, self.__mTime)
-
+        isObs = self.__observe(self.__mPosesActu[-1], len(self.__mPosesGues)-1, self.__mTime)
+        self.__mTrjEst.addPose(deepcopy(poseGues), isObs)
 
     def __observe(self, aPoseActuCrnt, aRobotPoseId, aTime):
 
@@ -517,7 +523,6 @@ class Robot(object):
 
         self.__mObsActu.append(obsActuCrnt)  # 観測結果
         self.__mObsTrue.append(obsTrueCrnt)  # 観測結果
-        self.__mIsPosesEst.append(isObs)
 
         return isObs
 
@@ -534,13 +539,10 @@ class Robot(object):
                 heobj_list = list(filter(lambda obj: obj.mLandMarkId == i, self.__mHalfEdges))
                 pair = list(itertools.combinations(heobj_list,2))
                 for p in pair:
-                    self.__mTrjEst.setPairObs(p[0], p[1], self.__mPosesEst)
-
-            isTmList = self.__mTrjEst.getActiveLandMarkTime()
-            self.__mIsPosesEst = [ True if i in isTmList else False for i in range(len(self.__mPosesEst)) ]
+                    self.__mTrjEst.setPairObs(p[0], p[1])
 
             # 情報行列と情報ベクトル更新
-            self.__mPosesEst, delta_sum = self.__mTrjEst.updateGuessPose(self.__mPosesEst)
+            delta_sum = self.__mTrjEst.updateGuessPose()
 
             loop_cnt += 1
 
@@ -554,12 +556,10 @@ class Robot(object):
         self.__drawPoses(aAx1, "blue", "Actual", self.__mPosesActu)
         self.__drawActualLandMark(aAx1)
 
+        estTrajPose = self.__mTrjEst.getEstTrajPose()
+        self.__drawPoses(aAx1, "cyan", "Est", estTrajPose )
+
         self.__debug(aAx2)
-
-    def drawEst(self, aAx):
-        est = [ pe for (i, pe) in enumerate(self.__mPosesEst) if self.__mIsPosesEst[i] == True ]
-        self.__drawPoses(aAx, "cyan", "Est", est )
-
 
     def __drawPoses(self, aAx, aColor, aLabel, aPoses):
         x = aPoses[-1][0, 0]
@@ -666,7 +666,7 @@ class Robot(object):
 
 # スキャンセンサモデル
 SCN_SENS_RANGE_m = 15.0  # 走査距離[m]
-SCN_SENS_ANGLE_rps = np.deg2rad(120.0)  # 走査角度[rad]
+SCN_SENS_ANGLE_rps = np.deg2rad(60.0)  # 走査角度[rad]
 RADIUS_m = 10.0  # 周回半径[m]
 
 # ロボット動作モデル
@@ -723,8 +723,6 @@ def graph_based_slam(i, aPeriod_ms):
     ax2 = plt.subplot2grid((1, 2), (0, 1), aspect = "equal", adjustable = "box-forced")
 
     gRbt.draw(ax1, ax2)
-
-    gRbt.drawEst(ax1)
 
 #    print(" x = {0:.3f}[m], y = {1:.3f}[m], θ = {2:.3f}[deg]".format(x[0, 0], x[1, 0], np.rad2deg(x[2, 0])))
 
