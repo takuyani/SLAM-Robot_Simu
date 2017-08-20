@@ -18,15 +18,16 @@ from mylib import transform as tf
 import motion_model as mm
 from matplotlib import animation, patches
 import copy
+from copy import deepcopy
 
 class ScanSensor(object):
     """スキャンセンサclass"""
 
     # 観測雑音定義
-    __DIST_NOISE = 0.1  # ランドマーク距離雑音[%]
+    __DIST_NOISE = 10  # ランドマーク距離雑音[%]
     __R_DIST = __DIST_NOISE / 100  # ランドマーク距離雑音ゲイン
-    __R_DIR_SIGMA = 0.5 * np.pi / 180  # ランドマーク観測方向雑音標準偏差[rad]
-    __R_ORIENT_SIGMA = 0.5 * np.pi / 180  # ランドマーク向き雑音標準偏差[rad]
+    __R_DIR_SIGMA = 3.0 * np.pi / 180  # ランドマーク観測方向雑音標準偏差[rad]
+    __R_ORIENT_SIGMA = 3.0 * np.pi / 180  # ランドマーク向き雑音標準偏差[rad]
 
 
     def __init__(self, aRange_m, aAngle_rad, aLandMarks):
@@ -347,7 +348,9 @@ class TrajectoryEstimator(object):
                     aEstPose[tm][1, 0] += delta[i * 3 + 1]
                     aEstPose[tm][2, 0] += delta[i * 3 + 2]
 
-                print("Δx.T・Δx = {0}".format(float(delta.T @ delta)))
+                delta_sum = float(delta.T @ delta)
+
+                print("Δx.T・Δx = {0}".format(delta_sum))
 
             else:
                 print("det = 0")
@@ -357,7 +360,7 @@ class TrajectoryEstimator(object):
             self.__KeepLandMarkId = []
             self.__KeepLandMarkTime = []
 
-        return aEstPose
+        return aEstPose, delta_sum
 
 
     def __calcRelativePoseByRobotPose(self, aPoseCrnt, aPosePrev):
@@ -475,6 +478,7 @@ class Robot(object):
         self.__mScnSnsr.scan(aPose)
         self.__observe(self.__mPosesActu[-1], len(self.__mPosesGues)-1, self.__mTime)
 
+        self.__DELTA_SUM_TH = 1.0
 
     def getPose(self):
         """"姿勢取得処理
@@ -496,7 +500,7 @@ class Robot(object):
         self.__mCtr.append(np.array([aV, aW]))  # 制御
         self.__mPosesActu.append(poseActu)  # 姿勢（実際値）
         self.__mPosesGues.append(poseGues)  # 姿勢（推定値）
-        self.__mPosesEst.append(poseGues)
+        self.__mPosesEst.append(deepcopy(poseGues))
 
         self.__mTime += 1
         self.__observe(self.__mPosesActu[-1], len(self.__mPosesGues)-1, self.__mTime)
@@ -517,24 +521,30 @@ class Robot(object):
 
         return isObs
 
-    def deepCopy(self):
-        self.__mPosesEst = copy.deepcopy(self.__mPosesGues)
-
 
     def estimateOpticalTrajectory(self):
 
-        lm_num = self.__mScnSnsr.getLandMarkNum()
-        for i in range(lm_num):
-            heobj_list = list(filter(lambda obj: obj.mLandMarkId == i, self.__mHalfEdges))
-            pair = list(itertools.combinations(heobj_list,2))
-            for p in pair:
-                self.__mTrjEst.setPairObs(p[0], p[1], self.__mPosesEst)
+        delta_sum = self.__DELTA_SUM_TH
+        loop_cnt = 0
 
-        isTmList = self.__mTrjEst.getActiveLandMarkTime()
-        self.__mIsPosesEst = [ True if i in isTmList else False for i in range(len(self.__mPosesEst)) ]
+        while self.__DELTA_SUM_TH <= delta_sum:
 
-        # 情報行列と情報ベクトル更新
-        self.__mPosesEst = self.__mTrjEst.updateGuessPose(self.__mPosesEst)
+            lm_num = self.__mScnSnsr.getLandMarkNum()
+            for i in range(lm_num):
+                heobj_list = list(filter(lambda obj: obj.mLandMarkId == i, self.__mHalfEdges))
+                pair = list(itertools.combinations(heobj_list,2))
+                for p in pair:
+                    self.__mTrjEst.setPairObs(p[0], p[1], self.__mPosesEst)
+
+            isTmList = self.__mTrjEst.getActiveLandMarkTime()
+            self.__mIsPosesEst = [ True if i in isTmList else False for i in range(len(self.__mPosesEst)) ]
+
+            # 情報行列と情報ベクトル更新
+            self.__mPosesEst, delta_sum = self.__mTrjEst.updateGuessPose(self.__mPosesEst)
+
+            loop_cnt += 1
+
+            print("Loop({0}):{1}".format(loop_cnt, delta_sum))
 
 
     def draw(self, aAx1, aAx2):
@@ -683,8 +693,6 @@ gRbt = Robot(x_base, PERIOD_ms / 1000, SCN_SENS_RANGE_m, SCN_SENS_ANGLE_rps, LAN
 
 time_s = 0
 
-Debug_flag = False
-
 def graph_based_slam(i, aPeriod_ms):
     """"Graph-based SLAM処理
     引数：
@@ -697,40 +705,26 @@ def graph_based_slam(i, aPeriod_ms):
     global RADIUS_m
     global OMEGA_rps
     global VEL_mps
-    global Debug_flag
 
 
     print("TIME:{0:.3f}[s]".format(time_s))
 
-    if Debug_flag == False:
-        time_s += aPeriod_ms / 1000
+    time_s += aPeriod_ms / 1000
 
-#        print(" 移動")
-        gRbt.move(VEL_mps, OMEGA_rps)
-        x = gRbt.getPose()
-#        print(" コピー")
-        gRbt.deepCopy()
+    gRbt.move(VEL_mps, OMEGA_rps)
+    x = gRbt.getPose()
 
-#    if time_s > 2:
-    if time_s > 20:
-        print("input:")
-        input()
-        print(" 軌跡推定")
-        gRbt.estimateOpticalTrajectory()
-        Debug_flag = True
+    gRbt.estimateOpticalTrajectory()
 
-#    print(" プロットクリア")
     plt.cla()
 
     # サブプロットを追加
     ax1 = plt.subplot2grid((1, 2), (0, 0), aspect = "equal", adjustable = "box-forced")
     ax2 = plt.subplot2grid((1, 2), (0, 1), aspect = "equal", adjustable = "box-forced")
 
-#    print(" 描写1")
     gRbt.draw(ax1, ax2)
 
-    if Debug_flag == True:
-        gRbt.drawEst(ax1)
+    gRbt.drawEst(ax1)
 
 #    print(" x = {0:.3f}[m], y = {1:.3f}[m], θ = {2:.3f}[deg]".format(x[0, 0], x[1, 0], np.rad2deg(x[2, 0])))
 
@@ -738,8 +732,6 @@ def graph_based_slam(i, aPeriod_ms):
     ax1.set_ylabel("y [m]")
     ax1.set_title("World")
     ax1.axis("equal", adjustable = "box")
-#    ax1.set_xlim(5, 15)
-#    ax1.set_ylim(-2, 8)
     ax1.grid()
     ax1.legend(fontsize = 10)
 
