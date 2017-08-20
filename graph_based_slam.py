@@ -453,8 +453,8 @@ class Robot(object):
         #---------- 姿勢 ----------
         self.__mPosesActu = [aPose]  # 姿勢（実際値）
         self.__mPosesGues = [aPose]  # 姿勢（推定値）
-        self.__mPosesEst = []
-        self.__mIsPosesEst = []
+        self.__mPosesEst = [aPose]
+        self.__mIsPosesEst = [True]
         #---------- 制御 ----------
         self.__mCtr = []
         #---------- 観測 ----------
@@ -473,7 +473,7 @@ class Robot(object):
         self.__mEllipse = error_ellipse.ErrorEllipse(self.__mConfidence_interval)
 
         self.__mScnSnsr.scan(aPose)
-        self.__observe(self.__mPosesActu, self.__mPosesGues, self.__mTime)
+        self.__observe(self.__mPosesActu[-1], len(self.__mPosesGues)-1, self.__mTime)
 
 
     def getPose(self):
@@ -496,22 +496,26 @@ class Robot(object):
         self.__mCtr.append(np.array([aV, aW]))  # 制御
         self.__mPosesActu.append(poseActu)  # 姿勢（実際値）
         self.__mPosesGues.append(poseGues)  # 姿勢（推定値）
+        self.__mPosesEst.append(poseGues)
 
         self.__mTime += 1
+        self.__observe(self.__mPosesActu[-1], len(self.__mPosesGues)-1, self.__mTime)
 
-        self.__observe(self.__mPosesActu, self.__mPosesGues, self.__mTime)
 
+    def __observe(self, aPoseActuCrnt, aRobotPoseId, aTime):
 
-    def __observe(self, aPoseActu, aPoseGues, aTime):
+        obsActuCrnt, obsTrueCrnt = self.__mScnSnsr.scan(aPoseActuCrnt)
 
-        obsActuCrnt, obsTrueCrnt = self.__mScnSnsr.scan(aPoseActu[-1])
-
+        isObs = False
         for obs in obsActuCrnt:
-            self.__mHalfEdges.append(Observation(aTime, obs[0], obs[1], len(aPoseGues)-1))
+            self.__mHalfEdges.append(Observation(aTime, obs[0], obs[1], aRobotPoseId))
+            isObs = True
 
         self.__mObsActu.append(obsActuCrnt)  # 観測結果
         self.__mObsTrue.append(obsTrueCrnt)  # 観測結果
+        self.__mIsPosesEst.append(isObs)
 
+        return isObs
 
     def deepCopy(self):
         self.__mPosesEst = copy.deepcopy(self.__mPosesGues)
@@ -540,11 +544,11 @@ class Robot(object):
         self.__drawPoses(aAx1, "blue", "Actual", self.__mPosesActu)
         self.__drawActualLandMark(aAx1)
 
-        if len(self.__mIsPosesEst) > 0:
-            est = [ pe for (i, pe) in enumerate(self.__mPosesEst) if self.__mIsPosesEst[i] == True ]
-            self.__drawPoses(aAx1, "cyan", "Est", est )
-
         self.__debug(aAx2)
+
+    def drawEst(self, aAx):
+        est = [ pe for (i, pe) in enumerate(self.__mPosesEst) if self.__mIsPosesEst[i] == True ]
+        self.__drawPoses(aAx, "cyan", "Est", est )
 
 
     def __drawPoses(self, aAx, aColor, aLabel, aPoses):
@@ -651,8 +655,8 @@ class Robot(object):
 
 
 # スキャンセンサモデル
-SCN_SENS_RANGE_m = 10.0  # 走査距離[m]
-SCN_SENS_ANGLE_rps = np.deg2rad(60.0)  # 走査角度[rad]
+SCN_SENS_RANGE_m = 15.0  # 走査距離[m]
+SCN_SENS_ANGLE_rps = np.deg2rad(120.0)  # 走査角度[rad]
 RADIUS_m = 10.0  # 周回半径[m]
 
 # ロボット動作モデル
@@ -724,6 +728,9 @@ def graph_based_slam(i, aPeriod_ms):
 
 #    print(" 描写1")
     gRbt.draw(ax1, ax2)
+
+    if Debug_flag == True:
+        gRbt.drawEst(ax1)
 
 #    print(" x = {0:.3f}[m], y = {1:.3f}[m], θ = {2:.3f}[deg]".format(x[0, 0], x[1, 0], np.rad2deg(x[2, 0])))
 
