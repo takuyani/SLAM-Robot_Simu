@@ -712,7 +712,7 @@ class Robot(object):
         """
         self.__mScnSnsr.draw(aAx1, "green", self.__mPosesActu[-1])
 
-        self.__drawPoses(aAx1, "red", "Guess", self.__mPosesTrue)
+        self.__drawPoses(aAx1, "red", "True", self.__mPosesTrue)
         self.__drawPoses(aAx1, "blue", "Actual", self.__mPosesActu)
         self.__drawActualLandMark(aAx1)
 
@@ -915,7 +915,8 @@ def graph_based_slam(i, aPeriod_ms):
     ax2.set_xlabel("x [m]")
     ax2.set_ylabel("y [m]")
     ax2.set_title("Robot System")
-    ax2.axis([-15, 15, -15, 15])
+    range = SCN_SENS_RANGE_m + 5.0
+    ax2.axis([-range, range, -range, range])
     ax2.grid()
     ax2.legend(fontsize = 10)
 
