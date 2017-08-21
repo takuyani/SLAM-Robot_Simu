@@ -36,11 +36,11 @@ class Observation:
         self.__mDir_rad = aDir_rad
         self.__mOrient_rad = aOrient_rad
 
-    def getId(self):
+    def getLandMarkId(self):
         """"ランドマーク識別ID取得
         引数：
             なし
-        返り値：
+        戻り値：
             ランドマーク識別ID
         """
         return self.__mLandMarkId
@@ -49,7 +49,7 @@ class Observation:
         """"ランドマーク距離取得
         引数：
             なし
-        返り値：
+        戻り値：
             ランドマーク距離[m]
         """
         return self.__mDist_m
@@ -58,7 +58,7 @@ class Observation:
         """"ランドマーク観測方向取得
         引数：
             なし
-        返り値：
+        戻り値：
             ランドマーク観測方向[rad]
         """
         return self.__mDir_rad
@@ -67,7 +67,7 @@ class Observation:
         """"ランドマーク向き取得
         引数：
             なし
-        返り値：
+        戻り値：
             ランドマーク向き
         """
         return self.__mOrient_rad
@@ -76,7 +76,7 @@ class Observation:
 class ScanSensor(object):
     """スキャンセンサclass"""
 
-    # 観測雑音定義
+    # 観測雑音定義(デフォルト値)
     __R_Dist = 10 / 100  # ランドマーク距離雑音ゲイン
     __R_DirSigma = np.deg2rad(3.0)  # ランドマーク観測方向雑音標準偏差[rad]
     __R_OrientSigma = np.deg2rad(3.0)  # ランドマーク向き雑音標準偏差[rad]
@@ -100,7 +100,7 @@ class ScanSensor(object):
         ang = np.rad2deg(aAngle_rad)
         ofs = np.rad2deg(tf.BASE_ANG)
 
-        step = 1.0
+        step = 1.0  # スキャン測定範囲の円弧を描くための間隔[deg]
         self.__p = []
         self.__p.append([aRange_m * np.cos(np.deg2rad(x)) for x  in np.arange(-ang + ofs, ang + ofs + step, step)])
         self.__p.append([aRange_m * np.sin(np.deg2rad(x)) for x  in np.arange(-ang + ofs, ang + ofs + step, step)])
@@ -119,7 +119,7 @@ class ScanSensor(object):
             aDist：ランドマーク距離雑音[%]
             aDirSigma：ランドマーク観測方向雑音標準偏差[deg]
             aOrientSigma：ランドマーク向き雑音標準偏差[deg]
-        返り値：
+        戻り値：
            なし
         """
         ScanSensor.__R_Dist = aDist / 100  # ランドマーク距離雑音ゲイン
@@ -128,12 +128,13 @@ class ScanSensor(object):
 
     def scan(self, aRobotPose):
         """"スキャン結果
+            ノイズ有りと無しの2つの観測結果を返却する
         引数：
             aRobotPose：ロボット姿勢
                aRobotPose[0, 0]：x座標[m]
                aRobotPose[1, 0]：y座標[m]
                aRobotPose[2, 0]：方角(rad)
-        返り値：
+        戻り値：
             obsWithNoise：ノイズ有り観測結果
                             [[観測classインスタンス(1)]
                              [観測classインスタンス(2)]
@@ -177,7 +178,7 @@ class ScanSensor(object):
         """計測座標系におけるランドマークの共分散行列取得
         引数：
             aLandMarkDist：ランドマーク距離
-        返り値：
+        戻り値：
             covMat：計測座標系での共分散行列(3×3)
                 対角成分
                 1：x軸の共分散
@@ -187,9 +188,9 @@ class ScanSensor(object):
         dist = aLandMarkDist * ScanSensor.__R_Dist
         dir_cov = (aLandMarkDist * np.sin(ScanSensor.__R_DirSigma)) ** 2
         orient_cov = ScanSensor.__R_DirSigma ** 2 + ScanSensor.__R_OrientSigma ** 2
-        covMat = np.array([[dist ** 2, 0, 0         ],
-                           [0, dir_cov, 0         ],
-                           [0, 0, orient_cov]])
+        covMat = np.array([[dist ** 2,       0, 0         ],
+                           [        0, dir_cov, 0         ],
+                           [        0,       0, orient_cov]])
 
         return covMat
 
@@ -200,7 +201,7 @@ class ScanSensor(object):
             aCovMat：共分散行列
             aLandMarkDir：ロボット座標系でのランドマーク観測方向[rad]
             aRobotDir：世界座標系でのロボット方角[rad]
-        返り値：
+        戻り値：
             covMatWorld：世界座標系での共分散行列(3×3)
         """
         ang = aLandMarkDir + aRobotDir - tf.BASE_ANG
@@ -220,7 +221,7 @@ class ScanSensor(object):
         引数：
             aCovMat：共分散行列
             aLandMarkDir：ロボット座標系でのランドマーク観測方向[rad]
-        返り値：
+        戻り値：
             covMatRobot：ロボット座標系での共分散行列(3×3)
         """
         c = np.cos(aLandMarkDir)
@@ -236,6 +237,8 @@ class ScanSensor(object):
     def draw(self, aAx, aColor, aPose):
         """"描写
         引数：
+            aAx：描写位置
+            aColor：描写色
             aPose：姿勢
                aPose[0, 0]：x座標[m]
                aPose[1, 0]：y座標[m]
@@ -248,6 +251,12 @@ class ScanSensor(object):
         aAx.scatter(self.__mLandMarks[:, 0], self.__mLandMarks[:, 1], s = 100, c = "yellow", marker = "*", alpha = 0.5, linewidths = "2", edgecolors = "orange", label = "Land Mark(True)")
 
     def getLandMarkNum(self):
+        """"ランドマーク個数取得
+        引数：
+            なし
+        戻り値：
+            ランドマーク個数
+        """
         return len(self.__mLandMarks)
 
 
@@ -269,7 +278,7 @@ class HalfEdge(object):
         """"時刻取得
         引数：
             なし
-        返り値：
+        戻り値：
             時刻
         """
         return self.__mTime
@@ -278,7 +287,7 @@ class HalfEdge(object):
         """"Observationインスタンス取得
         引数：
             なし
-        返り値：
+        戻り値：
             Observationインスタンス
         """
         return self.__mObs
@@ -287,31 +296,47 @@ class HalfEdge(object):
         """"ロボット姿勢識別ID取得
         引数：
             なし
-        返り値：
+        戻り値：
             ロボット姿勢識別ID
         """
         return self.__mRobotPoseId
 
 
 class Edge(object):
+    """エッジclass"""
 
-    def __init__(self, aTimeBfr, aTimeAft, aLandMarkId, aMatH_PP, aMatH_PC, aMatH_CP, aMatH_CC, aVecB_P, aVecB_C):
+    def __init__(self, aTimeBfr, aTimeAft, aLandMarkId, aMatH_BB, aMatH_BA, aMatH_AB, aMatH_AA, aVecB_B, aVecB_A):
+        """"コンストラクタ
+        引数：
+            aTimeBfr：時刻(前)[s]
+            aTimeAft：時刻(後)[s]
+            aLandMarkId：ランドマーク識別ID
+            aMatH_BB：情報行列(BforeJacb.T・情報行列Ω・BforeJacb)
+            aMatH_BA：情報行列(BforeJacb.T・情報行列Ω・AfterJacb)
+            aMatH_AB：情報行列(AfterJacb.T・情報行列Ω・BforeJacb)
+            aMatH_AA：情報行列(AfterJacb.T・情報行列Ω・AfterJacb)
+            aVecB_B：情報ベクトル(BeforeJacb.T・情報行列Ω・err)
+            aVecB_A：情報ベクトル(AfterJacb.T・情報行列Ω・err)
+        """
         self.mTimeBfr = aTimeBfr
         self.mTimeAft = aTimeAft
         self.mLandMarkId = aLandMarkId
-        self.mMatH_PrevPrev = aMatH_PP
-        self.mMatH_PrevCrnt = aMatH_PC
-        self.mMatH_CrntPrev = aMatH_CP
-        self.mMatH_CrntCrnt = aMatH_CC
-        self.mVecB_Prev = aVecB_P
-        self.mVecB_Crnt = aVecB_C
+        self.mMatH_BfrBfr = aMatH_BB
+        self.mMatH_BfrAft = aMatH_BA
+        self.mMatH_AftBfr = aMatH_AB
+        self.mMatH_AftAft = aMatH_AA
+        self.mVecB_Bfr = aVecB_B
+        self.mVecB_Aft = aVecB_A
 
 
 class TrajectoryEstimator(object):
     """軌跡推定器class"""
 
     def __init__(self, aPose):
-
+        """"コンストラクタ
+        引数：
+            aPose：ロボット姿勢
+        """
         self.__mPosesEst = [aPose]
         self.__mIsObs = [True]
 
@@ -324,15 +349,23 @@ class TrajectoryEstimator(object):
         self.__KeepLandMarkTime = []
 
     def addPose(self, aPose, aIsObs):
+        """"ロボット姿勢追加
+        引数：
+            aPose：ロボット姿勢
+            aIsObs：観測可否フラグ
+        """
         self.__mPosesEst.append(aPose)
         self.__mIsObs.append(aIsObs)
 
-    def getPoseLength(self):
-        return len(self.__mPosesEst)
-
     def setPairObs(self, aHalfEdge1, aHalfEdge2):
-        landMarkId = aHalfEdge1.getObs().getId()
+        """"観測ペア設定
+        引数：
+            aHalfEdge1：ハーフエッジインスタンス1
+            aHalfEdge2：ハーフエッジインスタンス2
+        """
+        landMarkId = aHalfEdge1.getObs().getLandMarkId()
 
+        # ２つの引数のインスタンスにおいて、どちらの時刻が前、後であるかを判定する
         if aHalfEdge1.getTime() > aHalfEdge2.getTime():
             timeAft = aHalfEdge1.getTime()
             timeBfr = aHalfEdge2.getTime()
@@ -359,7 +392,6 @@ class TrajectoryEstimator(object):
         if timeAft not in self.__KeepLandMarkTime:
             self.__KeepLandMarkTime.append(timeAft)
 
-
         # ロボット推定姿勢によるエッジ(相対姿勢)算出
         relPoseRbt = self.__calcRelativePoseByRobotPose(rbtPoseAft, rbtPoseBfr)
 
@@ -372,7 +404,6 @@ class TrajectoryEstimator(object):
         err = relPoseRbt - relPoseObs
 #        print("error:ID<{0}>,  x = {1:.3f}[m], y = {2:.3f}[m], θ = {3:.3f}[deg]".format(landMarkId, err[0, 0], err[1, 0], np.rad2deg(err[2, 0])))
 
-
         # 計測座標系での情報行列算出
         lmCovCrntM = ScanSensor.getLandMarkCovMatrixOnMeasurementSys(obsPoseAft.getDist())
         lmCovCrntW = ScanSensor.tfMeasurement2World(lmCovCrntM, obsPoseAft.getDir(), rbtPoseAft[2, 0])
@@ -380,38 +411,45 @@ class TrajectoryEstimator(object):
         lmCovPrevW = ScanSensor.tfMeasurement2World(lmCovPrevM, obsPoseBfr.getDir(), rbtPoseBfr[2, 0])
         sumCov = lmCovCrntW + lmCovPrevW
         infoMat = np.linalg.inv(sumCov)
-#        infoMat = np.identity(len(sumCov))
 
         # ヤコビアン算出
         theta = rbtPoseBfr[2, 0] + obsPoseBfr.getDir()
-        jacobMatPrev = np.array([[-1,  0, obsPoseBfr.getDist() * np.sin(theta)],
-                                 [ 0, -1, -obsPoseBfr.getDist() * np.cos(theta)],
-                                 [ 0,  0, -1                            ]])
+        jacobMatBfr = np.array([[-1,  0, obsPoseBfr.getDist() * np.sin(theta)],
+                                [ 0, -1, -obsPoseBfr.getDist() * np.cos(theta)],
+                                [ 0,  0, -1                            ]])
         theta = rbtPoseAft[2, 0] + obsPoseAft.getDir()
-        jacobMatCrnt = np.array([[ 1,  0, -obsPoseAft.getDist() * np.sin(theta)],
-                                 [ 0,  1,  obsPoseAft.getDist() * np.cos(theta)],
-                                 [ 0,  0,  1                            ]])
+        jacobMatAft = np.array([[ 1,  0, -obsPoseAft.getDist() * np.sin(theta)],
+                                [ 0,  1,  obsPoseAft.getDist() * np.cos(theta)],
+                                [ 0,  0,  1                            ]])
 
+        # 情報行列と情報ベクトルを追加する
         self.__mEdge.append(Edge(timeBfr,
                                  timeAft,
                                  landMarkId,
-                                 jacobMatPrev.T @ infoMat @ jacobMatPrev,
-                                 jacobMatPrev.T @ infoMat @ jacobMatCrnt,
-                                 jacobMatCrnt.T @ infoMat @ jacobMatPrev,
-                                 jacobMatCrnt.T @ infoMat @ jacobMatCrnt,
-                                 jacobMatPrev.T @ infoMat @ err,
-                                 jacobMatCrnt.T @ infoMat @ err
+                                 jacobMatBfr.T @ infoMat @ jacobMatBfr,
+                                 jacobMatBfr.T @ infoMat @ jacobMatAft,
+                                 jacobMatAft.T @ infoMat @ jacobMatBfr,
+                                 jacobMatAft.T @ infoMat @ jacobMatAft,
+                                 jacobMatBfr.T @ infoMat @ err,
+                                 jacobMatAft.T @ infoMat @ err
                                  ))
 
     def getEstTrajPose(self):
+        """"ロボット推定姿勢取得
+            観測された時刻のみのロボット推定位置を取得する
+        引数：
+            なし
+        戻り値：
+            ロボット推定姿勢
+        """
         return [ pe for (i, pe) in enumerate(self.__mPosesEst) if self.__mIsObs[i] == True ]
 
 
-    def updateGuessPose(self):
-        """"情報行列と情報ベクトルのリサイズ処理
+    def updateEstPose(self):
+        """"ロボット推定姿勢の更新
         引数：
             なし
-        返り値：
+        戻り値：
             なし
 
         """
@@ -429,29 +467,25 @@ class TrajectoryEstimator(object):
             timeList = sorted(self.__KeepLandMarkTime)
 
             for edg in self.__mEdge:
-                pp = timeList.index(edg.mTimeBfr) * 3
-                pc = timeList.index(edg.mTimeAft) * 3
+                pb = timeList.index(edg.mTimeBfr) * 3
+                pa = timeList.index(edg.mTimeAft) * 3
 
                 # 情報行列更新
-                self.__mMatH[pp:pp + 3, pp:pp + 3] += edg.mMatH_PrevPrev
-                self.__mMatH[pp:pp + 3, pc:pc + 3] += edg.mMatH_PrevCrnt
-                self.__mMatH[pc:pc + 3, pp:pp + 3] += edg.mMatH_CrntPrev
-                self.__mMatH[pc:pc + 3, pc:pc + 3] += edg.mMatH_CrntCrnt
+                self.__mMatH[pb:pb + 3, pb:pb + 3] += edg.mMatH_BfrBfr
+                self.__mMatH[pb:pb + 3, pa:pa + 3] += edg.mMatH_BfrAft
+                self.__mMatH[pa:pa + 3, pb:pb + 3] += edg.mMatH_AftBfr
+                self.__mMatH[pa:pa + 3, pa:pa + 3] += edg.mMatH_AftAft
 
                 # 情報ベクトル更新
-                self.__mVecB[pp:pp + 3, 0][:, np.newaxis] += edg.mVecB_Prev
-                self.__mVecB[pc:pc + 3, 0][:, np.newaxis] += edg.mVecB_Crnt
+                self.__mVecB[pb:pb + 3, 0][:, np.newaxis] += edg.mVecB_Bfr
+                self.__mVecB[pa:pa + 3, 0][:, np.newaxis] += edg.mVecB_Aft
 
             det = np.linalg.det(self.__mMatH)
             dbg_cond = np.linalg.cond(self.__mMatH)
             print("行列式 = {0}".format(det))
             print("条件数 = {0}".format(dbg_cond))
-            if det != 0.0 and dbg_cond < 10 ** 15:
-#            if det != 0.0:
-                #TODO:単位行列にならない？
+            if (10 ** 15 < det) and (dbg_cond < 10 ** 15):
                 inv = np.linalg.inv(self.__mMatH)
-                ii= inv @ self.__mMatH
-                ii2 = np.linalg.solve(self.__mMatH, numpy.identity(len(self.__mMatH))).dot(self.__mMatH)
                 delta = - inv @ self.__mVecB
                 for i, tm in enumerate(timeList):
                     self.__mPosesEst[tm][0, 0] += delta[i * 3]
@@ -459,9 +493,7 @@ class TrajectoryEstimator(object):
                     self.__mPosesEst[tm][2, 0] += delta[i * 3 + 2]
 
                 delta_sum = float(delta.T @ delta)
-
                 print("Δx.T・Δx = {0}".format(delta_sum))
-
             else:
                 delta_sum = 0.0
                 print("det = 0")
@@ -474,24 +506,24 @@ class TrajectoryEstimator(object):
         return delta_sum
 
 
-    def __calcRelativePoseByRobotPose(self, aPoseCrnt, aPosePrev):
+    def __calcRelativePoseByRobotPose(self, aPoseAft, aPoseBfr):
         """ロボットの推定姿勢による、相対姿勢算出
         引数：
-            aPoseCrnt：ロボット現在姿勢
-                aPoseCrnt[0, 0]：x座標[m]
-                aPoseCrnt[1, 0]：y座標[m]
-                aPoseCrnt[2, 0]：方角(rad)
-            aPosePrev：ロボット過去姿勢
-                aPoseCrnt[0, 0]：x座標[m]
-                aPoseCrnt[1, 0]：y座標[m]
-                aPoseCrnt[2, 0]：方角(rad)
-        返り値：
+            aPoseAft：ロボット姿勢(後)
+                aPoseAft[0, 0]：x座標[m]
+                aPoseAft[1, 0]：y座標[m]
+                aPoseAft[2, 0]：方角(rad)
+            aPoseBfr：ロボット姿勢(前)
+                aPoseAft[0, 0]：x座標[m]
+                aPoseAft[1, 0]：y座標[m]
+                aPoseAft[2, 0]：方角(rad)
+        戻り値：
             rel：相対ロボット姿勢
                 rel[0, 0]：x座標[m]
                 rel[1, 0]：y座標[m]
                 rel[2, 0]：方角(rad)
         """
-        rel = aPoseCrnt - aPosePrev
+        rel = aPoseAft - aPoseBfr
 
         return rel
 
@@ -501,7 +533,7 @@ class TrajectoryEstimator(object):
             変換後のロボット姿勢を戻り値として返す。
         引数：
             aObs：Observationインスタンス
-        返り値：
+        戻り値：
             robot：ランドマークを原点とした世界座標系でのロボット姿勢
                 robot[0]：ユークリッド距離
                 robot[1]：観測方向
@@ -513,26 +545,26 @@ class TrajectoryEstimator(object):
         robot = [dist, direct, orient]
         return robot
 
-    def __calcRelativePoseByObservation(self, aObsPoseCrnt, aObsPosePrev):
+    def __calcRelativePoseByObservation(self, aObsPoseAft, aObsPoseBfr):
         """観測結果による、相対姿勢算出
         引数：
-            aObsPoseCrnt：ロボット現在姿勢
-                aObsPoseCrnt[0]：ユークリッド距離
-                aObsPoseCrnt[1]：観測方向
-                aObsPoseCrnt[2]：ランドマーク向き
-            aObsPosePrev：ロボット過去姿勢
-                aObsPosePrev[0]：ユークリッド距離
-                aObsPosePrev[1]：観測方向
-                aObsPosePrev[2]：ランドマーク向き
-        返り値：
+            aObsPoseAft：ロボット姿勢(後)
+                aObsPoseAft[0]：ユークリッド距離
+                aObsPoseAft[1]：観測方向
+                aObsPoseAft[2]：ランドマーク向き
+            aObsPoseBfr：ロボット姿勢(前)
+                aObsPoseBfr[0]：ユークリッド距離
+                aObsPoseBfr[1]：観測方向
+                aObsPoseBfr[2]：ランドマーク向き
+        戻り値：
             rel：相対ロボット姿勢
                 rel[0, 0]：x座標[m]
                 rel[1, 0]：y座標[m]
                 rel[2, 0]：方角(rad)
         """
-        px = aObsPoseCrnt[0] * np.cos(aObsPoseCrnt[1]) - aObsPosePrev[0] * np.cos(aObsPosePrev[1])
-        py = aObsPoseCrnt[0] * np.sin(aObsPoseCrnt[1]) - aObsPosePrev[0] * np.sin(aObsPosePrev[1])
-        pt = aObsPoseCrnt[2] - aObsPosePrev[2]
+        px = aObsPoseAft[0] * np.cos(aObsPoseAft[1]) - aObsPoseBfr[0] * np.cos(aObsPoseBfr[1])
+        py = aObsPoseAft[0] * np.sin(aObsPoseAft[1]) - aObsPoseBfr[0] * np.sin(aObsPoseBfr[1])
+        pt = aObsPoseAft[2] - aObsPoseBfr[2]
 
         rel = np.array([[px],
                         [py],
@@ -572,9 +604,7 @@ class Robot(object):
 
         #---------- 姿勢 ----------
         self.__mPosesActu = [aPose]  # 姿勢（実際値）
-        self.__mPosesGues = [aPose]  # 姿勢（推定値）
-        self.__mPosesEst = [aPose]
-        self.__mIsPosesEst = [True]
+        self.__mPosesTrue = [aPose]  # 姿勢（真値）
         #---------- 制御 ----------
         self.__mCtr = []
         #---------- 観測 ----------
@@ -593,37 +623,47 @@ class Robot(object):
         self.__mEllipse = error_ellipse.ErrorEllipse(self.__mConfidence_interval)
 
         self.__mScnSnsr.scan(aPose)
-        self.__observe(self.__mPosesActu[-1], len(self.__mPosesGues)-1, self.__mTime)
+        self.__observe(self.__mPosesActu[-1], len(self.__mPosesTrue)-1, self.__mTime)
 
+        # ガウス・ニュートン法による、反復回数を決定する閾値
+        #  Σerr.T・err の値が閾値以下となったら計算終了
         self.__DELTA_SUM_TH = 1.0
 
-    def getPose(self):
-        """"姿勢取得処理
-        引数：
-            なし
-        返り値：
-            x：姿勢
-
-        """
-        return self.__mPosesActu[-1]
-
     def move(self, aV, aW):
-
+        """"移動
+        引数：
+            aV：速度ν[m/s]
+            aW：角速度ω[rad/s]
+        戻り値：
+            なし
+        """
         # 移動
         poseActu = self.__mMvMdl.moveWithNoise(self.__mPosesActu[-1], aV, aW)
-        poseGues = self.__mMvMdl.moveWithoutNoise(self.__mPosesGues[-1], aV, aW)
+        poseGues = self.__mMvMdl.moveWithoutNoise(self.__mPosesTrue[-1], aV, aW)
 
         # 履歴保持
         self.__mCtr.append(np.array([aV, aW]))  # 制御
         self.__mPosesActu.append(poseActu)  # 姿勢（実際値）
-        self.__mPosesGues.append(poseGues)  # 姿勢（推定値）
+        self.__mPosesTrue.append(poseGues)  # 姿勢（真値）
 
         self.__mTime += 1
-        isObs = self.__observe(self.__mPosesActu[-1], len(self.__mPosesGues)-1, self.__mTime)
+        isObs = self.__observe(self.__mPosesActu[-1], len(self.__mPosesTrue)-1, self.__mTime)
         self.__mTrjEst.addPose(deepcopy(poseGues), isObs)
 
     def __observe(self, aPoseActuCrnt, aRobotPoseId, aTime):
-
+        """"観測
+        引数：
+            aPoseActuCrnt：ロボット姿勢
+               aRobotPose[0, 0]：x座標[m]
+               aRobotPose[1, 0]：y座標[m]
+               aRobotPose[2, 0]：方角(rad)
+            aRobotPoseId：ロボット姿勢識別ID
+            aTime：時刻
+        戻り値：
+            観測結果有無フラグ
+                True：観測できたランドマーク有り
+                False：観測できたランドマーク無し
+        """
         obsActuCrnt, obsTrueCrnt = self.__mScnSnsr.scan(aPoseActuCrnt)
 
         isObs = False
@@ -631,14 +671,19 @@ class Robot(object):
             self.__mHalfEdges.append(HalfEdge(aTime, obs, aRobotPoseId))
             isObs = True
 
-        self.__mObsActu.append(obsActuCrnt)  # 観測結果
-        self.__mObsTrue.append(obsTrueCrnt)  # 観測結果
+        self.__mObsActu.append(obsActuCrnt)  # 観測結果（実際値）
+        self.__mObsTrue.append(obsTrueCrnt)  # 観測結果（真値）
 
         return isObs
 
 
     def estimateOpticalTrajectory(self):
-
+        """"軌跡推定
+        引数：
+            なし
+        戻り値：
+            なし
+        """
         delta_sum = self.__DELTA_SUM_TH
         loop_cnt = 0
 
@@ -646,13 +691,13 @@ class Robot(object):
 
             lm_num = self.__mScnSnsr.getLandMarkNum()
             for i in range(lm_num):
-                heobj_list = list(filter(lambda obj: obj.getObs().getId() == i, self.__mHalfEdges))
+                heobj_list = list(filter(lambda obj: obj.getObs().getLandMarkId() == i, self.__mHalfEdges))
                 pair = list(itertools.combinations(heobj_list,2))
                 for p in pair:
                     self.__mTrjEst.setPairObs(p[0], p[1])
 
             # 情報行列と情報ベクトル更新
-            delta_sum = self.__mTrjEst.updateGuessPose()
+            delta_sum = self.__mTrjEst.updateEstPose()
 
             loop_cnt += 1
 
@@ -660,9 +705,14 @@ class Robot(object):
 
 
     def draw(self, aAx1, aAx2):
+        """"描写
+        引数：
+            aAx1：描写位置1
+            aAx2：描写位置2
+        """
         self.__mScnSnsr.draw(aAx1, "green", self.__mPosesActu[-1])
 
-        self.__drawPoses(aAx1, "red", "Guess", self.__mPosesGues)
+        self.__drawPoses(aAx1, "red", "Guess", self.__mPosesTrue)
         self.__drawPoses(aAx1, "blue", "Actual", self.__mPosesActu)
         self.__drawActualLandMark(aAx1)
 
@@ -672,6 +722,15 @@ class Robot(object):
         self.__debug(aAx2)
 
     def __drawPoses(self, aAx, aColor, aLabel, aPoses):
+        """"ロボット姿勢描写
+        引数：
+            aAx：描写位置
+            aColor：描写色
+            aLabel：描写ラベル
+            aPoses：ロボット姿勢
+        戻り値：
+            なし
+        """
         x = aPoses[-1][0, 0]
         y = aPoses[-1][1, 0]
         # 矢印（ベクトル）の成分
@@ -686,6 +745,12 @@ class Robot(object):
         aAx.plot(pxa, pya, c = aColor, linewidth = 1.0, linestyle = "-", label = aLabel)
 
     def __drawActualLandMark(self, aAx):
+        """"実測ランドマーク描写
+        引数：
+            aAx：描写位置
+        戻り値：
+            なし
+        """
         obsCrnt = self.__mObsActu[-1]
         poseCrnt = self.__mPosesActu[-1]
         if len(obsCrnt) != 0:
@@ -808,7 +873,7 @@ def graph_based_slam(i, aPeriod_ms):
     """"Graph-based SLAM処理
     引数：
         PERIOD_ms：更新周期[msec]
-    返り値：
+    戻り値：
         なし
     """
     global time_s
@@ -822,10 +887,12 @@ def graph_based_slam(i, aPeriod_ms):
 
     time_s += aPeriod_ms / 1000
 
+    # 動作モデルによる、ロボットの移動
     gRbt.move(VEL_mps, OMEGA_rps)
-    x = gRbt.getPose()
 
+    # ロボット移動軌跡推定
     gRbt.estimateOpticalTrajectory()
+
 
     plt.cla()
 
@@ -839,7 +906,7 @@ def graph_based_slam(i, aPeriod_ms):
 
     ax1.set_xlabel("x [m]")
     ax1.set_ylabel("y [m]")
-    ax1.set_title("World")
+    ax1.set_title("World System")
     ax1.axis("equal", adjustable = "box")
     ax1.grid()
     ax1.legend(fontsize = 10)
@@ -847,7 +914,7 @@ def graph_based_slam(i, aPeriod_ms):
 
     ax2.set_xlabel("x [m]")
     ax2.set_ylabel("y [m]")
-    ax2.set_title("Robot")
+    ax2.set_title("Robot System")
     ax2.axis([-15, 15, -15, 15])
     ax2.grid()
     ax2.legend(fontsize = 10)
