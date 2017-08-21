@@ -24,23 +24,25 @@ class ScanSensor(object):
     """スキャンセンサclass"""
 
     # 観測雑音定義
-    __DIST_NOISE = 10  # ランドマーク距離雑音[%]
-    __R_DIST = __DIST_NOISE / 100  # ランドマーク距離雑音ゲイン
-    __R_DIR_SIGMA = 3.0 * np.pi / 180  # ランドマーク観測方向雑音標準偏差[rad]
-    __R_ORIENT_SIGMA = 3.0 * np.pi / 180  # ランドマーク向き雑音標準偏差[rad]
-
+    __R_Dist = 10 / 100  # ランドマーク距離雑音ゲイン
+    __R_DirSigma = np.deg2rad(3.0)  # ランドマーク観測方向雑音標準偏差[rad]
+    __R_OrientSigma = np.deg2rad(3.0)  # ランドマーク向き雑音標準偏差[rad]
 
     def __init__(self, aRange_m, aAngle_rad, aLandMarks):
         """"コンストラクタ
         引数：
             aRange_m：走査距離[m]
             aAngle_rad：走査角度[rad]
+            aLandMarks：ランドマーク
+                        [[1番目LMのX座標, 1番目LMのY座標]
+                         [2番目LMのX座標, 2番目LMのY座標]
+                                         ：
+                         [n番目LMのX座標, n番目LMのY座標]]
         """
         self.__mScanRange_m = aRange_m
         self.__mScanAngle_rad = aAngle_rad
         self.__mReslAng = int(np.rad2deg(aAngle_rad))
         self.__mLandMarks = aLandMarks
-        self.__mObsFlg = [[False] * len(self.__mLandMarks)]
 
         ang = np.rad2deg(aAngle_rad)
         ofs = np.rad2deg(tf.BASE_ANG)
@@ -58,6 +60,18 @@ class ScanSensor(object):
                                  self.__p[1]])
 
 
+    def setNoiseParam(self, aDist, aDirSigma, aOrientSigma):
+        """"ノイズパラメータ設定
+        引数：
+            aDist：ランドマーク距離雑音[%]
+            aDirSigma：ランドマーク観測方向雑音標準偏差[deg]
+            aOrientSigma：ランドマーク向き雑音標準偏差[deg]
+        返り値：
+           なし
+        """
+        ScanSensor.__R_Dist = aDist / 100  # ランドマーク距離雑音ゲイン
+        ScanSensor.__R_DirSigma = np.deg2rad(aDirSigma)  # ランドマーク観測方向雑音標準偏差[rad]
+        ScanSensor.__R_OrientSigma = np.deg2rad(aOrientSigma)  # ランドマーク向き雑音標準偏差[rad]
 
     def scan(self, aPose):
         """"スキャン結果
@@ -78,16 +92,18 @@ class ScanSensor(object):
 
         # センサの測定範囲内にランドマークが存在するか否かの判定
         scanRad = tf.BASE_ANG - self.__mScanAngle_rad
-        self.__mObsFlg = [ True
+        obsDetectFlg = [ True
                           if (distLm[i] <= self.__mScanRange_m and (robotLandMarks[i, 1] >= np.absolute(robotLandMarks[i, 0]) * np.tan(scanRad)))
                           else False
                           for i in range(len(dirLm_rad))]
 
-        for i, flg in enumerate(self.__mObsFlg):
+        for i, flg in enumerate(obsDetectFlg):
             if (flg == True):
-                distActu = np.random.normal(distLm[i], distLm[i] * self.__R_DIST)
-                dirActu = limit.limit_angle(np.random.normal(dirLm_rad[i], self.__R_DIR_SIGMA))
-                orientActu = limit.limit_angle(np.random.normal(orientLm_rad[i], self.__R_ORIENT_SIGMA))
+                # ノイズ付与
+                distActu = np.random.normal(distLm[i], distLm[i] * ScanSensor.__R_Dist)
+                dirActu = limit.limit_angle(np.random.normal(dirLm_rad[i], ScanSensor.__R_DirSigma))
+                orientActu = limit.limit_angle(np.random.normal(orientLm_rad[i], ScanSensor.__R_OrientSigma))
+                #観測結果格納
                 obsWithNoise.append([i, [distActu, dirActu, orientActu]])
                 obsWithoutNoise.append([i, [distLm[i], dirLm_rad[i], orientLm_rad[i]]])
 
@@ -113,9 +129,9 @@ class ScanSensor(object):
                 2：y軸の共分散
                 3：θ方向の共分散
         """
-        dist = aLandMark[0] * ScanSensor.__R_DIST
-        dir_cov = (aLandMark[0] * np.sin(ScanSensor.__R_DIR_SIGMA)) ** 2
-        orient_cov = ScanSensor.__R_DIR_SIGMA ** 2 + ScanSensor.__R_ORIENT_SIGMA ** 2
+        dist = aLandMark[0] * ScanSensor.__R_Dist
+        dir_cov = (aLandMark[0] * np.sin(ScanSensor.__R_DirSigma)) ** 2
+        orient_cov = ScanSensor.__R_DirSigma ** 2 + ScanSensor.__R_OrientSigma ** 2
         covMat = np.array([[dist ** 2, 0, 0         ],
                            [0, dir_cov, 0         ],
                            [0, 0, orient_cov]])
@@ -442,7 +458,7 @@ class TrajectoryEstimator(object):
 class Robot(object):
     """ロボットclass"""
 
-    def __init__(self, aPose, aDt, aScanRng, aScanAng, aLandMarks):
+    def __init__(self, aPose, aDt, aScanRng_m, aScanAng_rad, aLandMarks):
         """"コンストラクタ
         引数：
             aPose：姿勢
@@ -450,8 +466,17 @@ class Robot(object):
                aPose[1, 0]：y座標[m]
                aPose[2, 0]：方角(rad)
             aDt：演算周期[sec]
+            aScanRng_m：走査距離[m]
+            aScanAng_rad：走査角度[rad]
+            aLandMarks：ランドマーク
+                        [[1番目LMのX座標, 1番目LMのY座標]
+                         [2番目LMのX座標, 2番目LMのY座標]
+                                         ：
+                         [n番目LMのX座標, n番目LMのY座標]]
         """
-        self.__mScnSnsr = ScanSensor(aScanRng, aScanAng, aLandMarks)
+        self.__mScnSnsr = ScanSensor(aScanRng_m, aScanAng_rad, aLandMarks)
+        self.__mScnSnsr.setNoiseParam(10, 3.0, 3.0)
+
         self.__mMvMdl = mm.MotionModel(aDt, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)
 #        self.__mMvMdl = mm.MotionModel(aDt, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01)
         self.__mTrjEst = TrajectoryEstimator(aPose)
