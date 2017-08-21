@@ -20,6 +20,59 @@ from matplotlib import animation, patches
 import copy
 from copy import deepcopy
 
+class Observation:
+    """観測class"""
+
+    def __init__(self, aLandMarkId, aDist_m, aDir_rad, aOrient_rad):
+        """"コンストラクタ
+        引数：
+            aLandMarkId：ランドマーク識別ID
+            aDist_m：ランドマーク距離[m]
+            aDir_rad：ランドマーク観測方向[rad]
+            aOrient_rad：ランドマーク向き[rad]
+        """
+        self.__mLandMarkId = aLandMarkId
+        self.__mDist_m = aDist_m
+        self.__mDir_rad = aDir_rad
+        self.__mOrient_rad = aOrient_rad
+
+    def getId(self):
+        """"ランドマーク識別ID取得
+        引数：
+            なし
+        返り値：
+            ランドマーク識別ID
+        """
+        return self.__mLandMarkId
+
+    def getDist(self):
+        """"ランドマーク距離取得
+        引数：
+            なし
+        返り値：
+            ランドマーク距離[m]
+        """
+        return self.__mDist_m
+
+    def getDir(self):
+        """"ランドマーク観測方向取得
+        引数：
+            なし
+        返り値：
+            ランドマーク観測方向[rad]
+        """
+        return self.__mDir_rad
+
+    def getOrient(self):
+        """"ランドマーク向き取得
+        引数：
+            なし
+        返り値：
+            ランドマーク向き
+        """
+        return self.__mOrient_rad
+
+
 class ScanSensor(object):
     """スキャンセンサclass"""
 
@@ -73,29 +126,38 @@ class ScanSensor(object):
         ScanSensor.__R_DirSigma = np.deg2rad(aDirSigma)  # ランドマーク観測方向雑音標準偏差[rad]
         ScanSensor.__R_OrientSigma = np.deg2rad(aOrientSigma)  # ランドマーク向き雑音標準偏差[rad]
 
-    def scan(self, aPose):
+    def scan(self, aRobotPose):
         """"スキャン結果
         引数：
-            aPose：姿勢
-               aPose[0, 0]：x座標[m]
-               aPose[1, 0]：y座標[m]
-               aPose[2, 0]：方角(rad)
+            aRobotPose：ロボット姿勢
+               aRobotPose[0, 0]：x座標[m]
+               aRobotPose[1, 0]：y座標[m]
+               aRobotPose[2, 0]：方角(rad)
         返り値：
-           なし
+            obsWithNoise：ノイズ有り観測結果
+                            [[観測classインスタンス(1)]
+                             [観測classインスタンス(2)]
+                                             ：
+                             [観測classインスタンス(n)]]
+            obsWithoutNoise：ノイズ無し観測結果
+                            [[観測classインスタンス(1)]
+                             [観測classインスタンス(2)]
+                                             ：
+                             [観測classインスタンス(n)]]
         """
         obsWithNoise = []
         obsWithoutNoise = []
-        robotLandMarks = tf.world2robot(aPose, self.__mLandMarks)  # 世界座標系→ロボット座標系変換
+        robotLandMarks = tf.world2robot(aRobotPose, self.__mLandMarks)  # 世界座標系→ロボット座標系変換
         distLm = np.linalg.norm(robotLandMarks, axis = 1)  # ランドマーク距離算出
         dirLm_rad = np.arctan2(robotLandMarks[:, 1], robotLandMarks[:, 0])  # ランドマーク観測方向算出
-        orientLm_rad = np.ones(robotLandMarks.shape[0]) * (tf.BASE_ANG - aPose[2, 0])  # ランドマーク向き算出
+        orientLm_rad = np.ones(robotLandMarks.shape[0]) * (tf.BASE_ANG - aRobotPose[2, 0])  # ランドマーク向き算出
 
         # センサの測定範囲内にランドマークが存在するか否かの判定
         scanRad = tf.BASE_ANG - self.__mScanAngle_rad
         obsDetectFlg = [ True
                           if (distLm[i] <= self.__mScanRange_m and (robotLandMarks[i, 1] >= np.absolute(robotLandMarks[i, 0]) * np.tan(scanRad)))
                           else False
-                          for i in range(len(dirLm_rad))]
+                          for i in range(len(robotLandMarks))]
 
         for i, flg in enumerate(obsDetectFlg):
             if (flg == True):
@@ -104,24 +166,17 @@ class ScanSensor(object):
                 dirActu = limit.limit_angle(np.random.normal(dirLm_rad[i], ScanSensor.__R_DirSigma))
                 orientActu = limit.limit_angle(np.random.normal(orientLm_rad[i], ScanSensor.__R_OrientSigma))
                 #観測結果格納
-                obsWithNoise.append([i, [distActu, dirActu, orientActu]])
-                obsWithoutNoise.append([i, [distLm[i], dirLm_rad[i], orientLm_rad[i]]])
+                obsWithNoise.append(Observation(i, distActu, dirActu, orientActu))
+                obsWithoutNoise.append(Observation(i, distLm[i], dirLm_rad[i], orientLm_rad[i]))
 
         return obsWithNoise, obsWithoutNoise
 
 
     @classmethod
-    def getLandMarkCovMatrixOnMeasurementSys(cls, aLandMark):
+    def getLandMarkCovMatrixOnMeasurementSys(cls, aLandMarkDist):
         """計測座標系におけるランドマークの共分散行列取得
         引数：
-            aPose：世界座標系でのロボット姿勢
-               aPose[0, 0]：x座標[m]
-               aPose[1, 0]：y座標[m]
-               aPose[2, 0]：方角(rad)
-            aLandMark：計測座標家でのランドマーク姿勢
-                aLandMark[0]：ユークリッド距離
-                aLandMark[1]：観測方向
-                aLandMark[2]：ランドマーク向き
+            aLandMarkDist：ランドマーク距離
         返り値：
             covMat：計測座標系での共分散行列(3×3)
                 対角成分
@@ -129,8 +184,8 @@ class ScanSensor(object):
                 2：y軸の共分散
                 3：θ方向の共分散
         """
-        dist = aLandMark[0] * ScanSensor.__R_Dist
-        dir_cov = (aLandMark[0] * np.sin(ScanSensor.__R_DirSigma)) ** 2
+        dist = aLandMarkDist * ScanSensor.__R_Dist
+        dir_cov = (aLandMarkDist * np.sin(ScanSensor.__R_DirSigma)) ** 2
         orient_cov = ScanSensor.__R_DirSigma ** 2 + ScanSensor.__R_OrientSigma ** 2
         covMat = np.array([[dist ** 2, 0, 0         ],
                            [0, dir_cov, 0         ],
@@ -196,13 +251,46 @@ class ScanSensor(object):
         return len(self.__mLandMarks)
 
 
-class Observation(object):
-    """観測class"""
-    def __init__(self, aTime, aLandMarkId, aLandMarkPose, aRobotPoseId):
-        self.mTime = aTime
-        self.mLandMarkId = aLandMarkId
-        self.mLandMarkPose = aLandMarkPose
-        self.mRobotPoseId = aRobotPoseId
+class HalfEdge(object):
+    """ハーフエッジclass"""
+
+    def __init__(self, aTime, aObs, aRobotPoseId):
+        """"コンストラクタ
+        引数：
+            aTime：時刻
+            aObs：Observationインスタンス
+            aRobotPoseId：ロボット姿勢識別ID
+        """
+        self.__mTime = aTime
+        self.__mObs = aObs
+        self.__mRobotPoseId = aRobotPoseId
+
+    def getTime(self):
+        """"時刻取得
+        引数：
+            なし
+        返り値：
+            時刻
+        """
+        return self.__mTime
+
+    def getObs(self):
+        """"Observationインスタンス取得
+        引数：
+            なし
+        返り値：
+            Observationインスタンス
+        """
+        return self.__mObs
+
+    def getRobotPoseId(self):
+        """"ロボット姿勢識別ID取得
+        引数：
+            なし
+        返り値：
+            ロボット姿勢識別ID
+        """
+        return self.__mRobotPoseId
 
 
 class Edge(object):
@@ -242,23 +330,23 @@ class TrajectoryEstimator(object):
     def getPoseLength(self):
         return len(self.__mPosesEst)
 
-    def setPairObs(self, aObs1, aObs2):
-        landMarkId = aObs1.mLandMarkId
+    def setPairObs(self, aHalfEdge1, aHalfEdge2):
+        landMarkId = aHalfEdge1.getObs().getId()
 
-        if aObs1.mTime > aObs2.mTime:
-            timeAft = aObs1.mTime
-            timeBfr = aObs2.mTime
-            obsPoseAft = aObs1.mLandMarkPose
-            obsPoseBfr = aObs2.mLandMarkPose
-            rbtPoseAft = self.__mPosesEst[aObs1.mRobotPoseId]
-            rbtPoseBfr = self.__mPosesEst[aObs2.mRobotPoseId]
+        if aHalfEdge1.getTime() > aHalfEdge2.getTime():
+            timeAft = aHalfEdge1.getTime()
+            timeBfr = aHalfEdge2.getTime()
+            obsPoseAft = aHalfEdge1.getObs()
+            obsPoseBfr = aHalfEdge2.getObs()
+            rbtPoseAft = self.__mPosesEst[aHalfEdge1.getRobotPoseId()]
+            rbtPoseBfr = self.__mPosesEst[aHalfEdge2.getRobotPoseId()]
         else:
-            timeAft = aObs2.mTime
-            timeBfr = aObs1.mTime
-            obsPoseAft = aObs2.mLandMarkPose
-            obsPoseBfr = aObs1.mLandMarkPose
-            rbtPoseAft = self.__mPosesEst[aObs2.mRobotPoseId]
-            rbtPoseBfr = self.__mPosesEst[aObs1.mRobotPoseId]
+            timeAft = aHalfEdge2.getTime()
+            timeBfr = aHalfEdge1.getTime()
+            obsPoseAft = aHalfEdge2.getObs()
+            obsPoseBfr = aHalfEdge1.getObs()
+            rbtPoseAft = self.__mPosesEst[aHalfEdge2.getRobotPoseId()]
+            rbtPoseBfr = self.__mPosesEst[aHalfEdge1.getRobotPoseId()]
 
 
         # 新規に検出されたランドマーク
@@ -286,22 +374,22 @@ class TrajectoryEstimator(object):
 
 
         # 計測座標系での情報行列算出
-        lmCovCrntM = ScanSensor.getLandMarkCovMatrixOnMeasurementSys(obsPoseAft)
-        lmCovCrntW = ScanSensor.tfMeasurement2World(lmCovCrntM, obsPoseAft[1], rbtPoseAft[2, 0])
-        lmCovPrevM = ScanSensor.getLandMarkCovMatrixOnMeasurementSys(obsPoseBfr)
-        lmCovPrevW = ScanSensor.tfMeasurement2World(lmCovPrevM, obsPoseBfr[1], rbtPoseBfr[2, 0])
+        lmCovCrntM = ScanSensor.getLandMarkCovMatrixOnMeasurementSys(obsPoseAft.getDist())
+        lmCovCrntW = ScanSensor.tfMeasurement2World(lmCovCrntM, obsPoseAft.getDir(), rbtPoseAft[2, 0])
+        lmCovPrevM = ScanSensor.getLandMarkCovMatrixOnMeasurementSys(obsPoseBfr.getDist())
+        lmCovPrevW = ScanSensor.tfMeasurement2World(lmCovPrevM, obsPoseBfr.getDir(), rbtPoseBfr[2, 0])
         sumCov = lmCovCrntW + lmCovPrevW
         infoMat = np.linalg.inv(sumCov)
 #        infoMat = np.identity(len(sumCov))
 
         # ヤコビアン算出
-        theta = rbtPoseBfr[2, 0] + obsPoseBfr[1]
-        jacobMatPrev = np.array([[-1,  0, obsPoseBfr[0] * np.sin(theta)],
-                                 [ 0, -1, -obsPoseBfr[0] * np.cos(theta)],
+        theta = rbtPoseBfr[2, 0] + obsPoseBfr.getDir()
+        jacobMatPrev = np.array([[-1,  0, obsPoseBfr.getDist() * np.sin(theta)],
+                                 [ 0, -1, -obsPoseBfr.getDist() * np.cos(theta)],
                                  [ 0,  0, -1                            ]])
-        theta = rbtPoseAft[2, 0] + obsPoseAft[1]
-        jacobMatCrnt = np.array([[ 1,  0, -obsPoseAft[0] * np.sin(theta)],
-                                 [ 0,  1,  obsPoseAft[0] * np.cos(theta)],
+        theta = rbtPoseAft[2, 0] + obsPoseAft.getDir()
+        jacobMatCrnt = np.array([[ 1,  0, -obsPoseAft.getDist() * np.sin(theta)],
+                                 [ 0,  1,  obsPoseAft.getDist() * np.cos(theta)],
                                  [ 0,  0,  1                            ]])
 
         self.__mEdge.append(Edge(timeBfr,
@@ -407,24 +495,21 @@ class TrajectoryEstimator(object):
 
         return rel
 
-    def __tfRobot2LandMark(self, aLandMark):
+    def __tfRobot2LandMark(self, aObs):
         """ロボット座標系→ランドマーク世界座標系変換
             ロボットを原点とした座標系からランドマークを原点とした世界座標系に変換し、
             変換後のロボット姿勢を戻り値として返す。
         引数：
-            aLandMark：ランドマーク姿勢
-                aLandMark[0]：ユークリッド距離
-                aLandMark[1]：観測方向
-                aLandMark[2]：ランドマーク向き
+            aObs：Observationインスタンス
         返り値：
             robot：ランドマークを原点とした世界座標系でのロボット姿勢
                 robot[0]：ユークリッド距離
                 robot[1]：観測方向
                 robot[2]：ランドマーク向き
         """
-        dist = aLandMark[0]
-        direct = limit.limit_angle(np.pi + aLandMark[1] - aLandMark[2])
-        orient = limit.limit_angle(tf.BASE_ANG - aLandMark[2])
+        dist = aObs.getDist()
+        direct = limit.limit_angle(np.pi + aObs.getDir() - aObs.getOrient())
+        orient = limit.limit_angle(tf.BASE_ANG - aObs.getOrient())
         robot = [dist, direct, orient]
         return robot
 
@@ -543,7 +628,7 @@ class Robot(object):
 
         isObs = False
         for obs in obsActuCrnt:
-            self.__mHalfEdges.append(Observation(aTime, obs[0], obs[1], aRobotPoseId))
+            self.__mHalfEdges.append(HalfEdge(aTime, obs, aRobotPoseId))
             isObs = True
 
         self.__mObsActu.append(obsActuCrnt)  # 観測結果
@@ -561,7 +646,7 @@ class Robot(object):
 
             lm_num = self.__mScnSnsr.getLandMarkNum()
             for i in range(lm_num):
-                heobj_list = list(filter(lambda obj: obj.mLandMarkId == i, self.__mHalfEdges))
+                heobj_list = list(filter(lambda obj: obj.getObs().getId() == i, self.__mHalfEdges))
                 pair = list(itertools.combinations(heobj_list,2))
                 for p in pair:
                     self.__mTrjEst.setPairObs(p[0], p[1])
@@ -605,13 +690,14 @@ class Robot(object):
         poseCrnt = self.__mPosesActu[-1]
         if len(obsCrnt) != 0:
             for obs in obsCrnt:
-                obsPose = obs[1]
-                lmCovM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPose)
-                lmCovW = self.__mScnSnsr.tfMeasurement2World(lmCovM, obsPose[1], poseCrnt[2, 0])
+                obsDist = obs.getDist()
+                obsDir = obs.getDir()
+                lmCovM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsDist)
+                lmCovW = self.__mScnSnsr.tfMeasurement2World(lmCovM, obsDir, poseCrnt[2, 0])
                 Pxy = lmCovW[0:2, 0:2]
                 x, y, ang_rad = self.__mEllipse.calc_error_ellipse(Pxy)
-                px = (obsPose[0] * np.cos(obsPose[1] + poseCrnt[2, 0] - tf.BASE_ANG)) + poseCrnt[0, 0]
-                py = (obsPose[0] * np.sin(obsPose[1] + poseCrnt[2, 0] - tf.BASE_ANG)) + poseCrnt[1, 0]
+                px = (obsDist * np.cos(obsDir + poseCrnt[2, 0] - tf.BASE_ANG)) + poseCrnt[0, 0]
+                py = (obsDist * np.sin(obsDir + poseCrnt[2, 0] - tf.BASE_ANG)) + poseCrnt[1, 0]
                 p = ( px, py )
                 # 誤差楕円描写
                 e = patches.Ellipse(p, x, y, angle = np.rad2deg(ang_rad), linewidth = 2, alpha = 0.2,
@@ -634,9 +720,9 @@ class Robot(object):
 
         obsCrnt = self.__mObsTrue[-1]
         if len(obsCrnt) != 0:
-            pxa = [obs[1][0] * np.cos(obs[1][1]) for obs in obsCrnt]
-            pya = [obs[1][0] * np.sin(obs[1][1]) for obs in obsCrnt]
-            pta = [obs[1][2] for obs in obsCrnt]
+            pxa = [obs.getDist() * np.cos(obs.getDir()) for obs in obsCrnt]
+            pya = [obs.getDist() * np.sin(obs.getDir()) for obs in obsCrnt]
+            pta = [obs.getOrient() for obs in obsCrnt]
             # ランドマーク描写
             aAx.scatter(pxa, pya, s = 100, c = "yellow", marker = "*", alpha = 0.5, linewidths = "2",
                         edgecolors = "orange", label = "Land Mark(True)")
@@ -648,12 +734,11 @@ class Robot(object):
             # 矢印描写
             aAx.quiver(x, y, u, v, color = "orange", angles = "xy", scale_units = "xy", scale = 1)
 
-
         obsCrnt = self.__mObsActu[-1]
         if len(obsCrnt) != 0:
-            pxa = [obs[1][0] * np.cos(obs[1][1]) for obs in obsCrnt]
-            pya = [obs[1][0] * np.sin(obs[1][1]) for obs in obsCrnt]
-            pta = [obs[1][2] for obs in obsCrnt]
+            pxa = [obs.getDist() * np.cos(obs.getDir()) for obs in obsCrnt]
+            pya = [obs.getDist() * np.sin(obs.getDir()) for obs in obsCrnt]
+            pta = [obs.getOrient() for obs in obsCrnt]
             # ランドマーク描写
             aAx.scatter(pxa, pya, s = 100, c = "red", marker = "*", alpha = 0.5, linewidths = "2",
                         edgecolors = "red", label = "Land Mark(Actual)")
@@ -667,12 +752,13 @@ class Robot(object):
             aAx.quiver(x, y, u, v, color = "red", angles = "xy", scale_units = "xy", scale = 1)
 
             for obs in obsCrnt:
-                obsPose = obs[1]
-                lmCovM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsPose)
-                lmCovR = self.__mScnSnsr.tfMeasurement2Robot(lmCovM, obsPose[1])
+                obsDist = obs.getDist()
+                obsDir = obs.getDir()
+                lmCovM = self.__mScnSnsr.getLandMarkCovMatrixOnMeasurementSys(obsDist)
+                lmCovR = self.__mScnSnsr.tfMeasurement2Robot(lmCovM, obsDir)
                 Pxy = lmCovR[0:2, 0:2]
                 x, y, ang_rad = self.__mEllipse.calc_error_ellipse(Pxy)
-                p = ( obsPose[0] * np.cos(obsPose[1]), obsPose[0] * np.sin(obsPose[1]) )
+                p = ( obsDist * np.cos(obsDir), obsDist * np.sin(obsDir) )
                 ell = patches.Ellipse(p, x, y, angle = np.rad2deg(ang_rad), linewidth = 2, alpha = 0.2,
                              facecolor = 'yellow', edgecolor = 'black', label = 'Error Ellipse: %.2f[%%]' %
                              self.__mConfidence_interval)
@@ -691,7 +777,7 @@ class Robot(object):
 
 # スキャンセンサモデル
 SCN_SENS_RANGE_m = 15.0  # 走査距離[m]
-SCN_SENS_ANGLE_rps = np.deg2rad(60.0)  # 走査角度[rad]
+SCN_SENS_ANGLE_rps = np.deg2rad(80.0)  # 走査角度[rad]
 RADIUS_m = 10.0  # 周回半径[m]
 
 # ロボット動作モデル
