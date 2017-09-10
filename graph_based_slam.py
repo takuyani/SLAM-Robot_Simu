@@ -148,7 +148,7 @@ class ScanSensor(object):
         obsWithNoise = []
         obsWithoutNoise = []
         robotLandMarks = tf.world2robot(aRobotPose, self.__mLandMarks)  # 世界座標系→ロボット座標系変換
-        distLm = np.linalg.norm(robotLandMarks, axis = 1)  # ランドマーク距離算出
+        distLm = np.linalg.norm(robotLandMarks, axis=1)  # ランドマーク距離算出
         dirLm_rad = np.arctan2(robotLandMarks[:, 1], robotLandMarks[:, 0])  # ランドマーク観測方向算出
         orientLm_rad = np.ones(robotLandMarks.shape[0]) * (tf.BASE_ANG - aRobotPose[2, 0])  # ランドマーク向き算出
 
@@ -244,10 +244,10 @@ class ScanSensor(object):
                aPose[2, 0]：方角(rad)
         """
         world = tf.robot2world(aPose, self.__local.T)
-        aAx.plot(world.T[0], world.T[1], c = aColor, linewidth = 1.0, linestyle = "-")
+        aAx.plot(world.T[0], world.T[1], c=aColor, linewidth=1.0, linestyle="-")
 
         # ランドマークの描写
-        aAx.scatter(self.__mLandMarks[:, 0], self.__mLandMarks[:, 1], s = 100, c = "yellow", marker = "*", alpha = 0.5, linewidths = "2", edgecolors = "orange", label = "Land Mark(True)")
+        aAx.scatter(self.__mLandMarks[:, 0], self.__mLandMarks[:, 1], s=100, c="yellow", marker="*", alpha=0.5, linewidths="2", edgecolors="orange", label="Land Mark(True)")
 
     def getLandMarkNum(self):
         """"ランドマーク個数取得
@@ -597,7 +597,7 @@ class Robot(object):
                          [n番目LMのX座標, n番目LMのY座標]]
         """
         self.__mScnSnsr = ScanSensor(aScanRng_m, aScanAng_rad, aLandMarks)
-        self.__mScnSnsr.setNoiseParam(10, 3.0, 3.0)
+        self.__mScnSnsr.setNoiseParam(3.0, 3.0, 3.0)
 
         self.__mMvMdl = mm.MotionModel(aDt, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)
 #        self.__mMvMdl = mm.MotionModel(aDt, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01)
@@ -634,11 +634,11 @@ class Robot(object):
         #  Δxの２乗和(Δx.T・Δx)の値が閾値以下となったら計算終了
         self.__DELTA_SUM_TH = 1.0
 
-        self.__isCalc = False   # 軌跡算出可否判定
-        self.__loopCnt = 0.0   # 計算反復回数
-        self.__deltaSum = 0.0   # Δxの２乗和(Δx.T・Δx)
-        self.__det = 0.0   # 情報行列Hの行列式
-        self.__cond = 0.0   # 情報行列Hの条件数
+        self.__isCalc = False  # 軌跡算出可否判定
+        self.__loopCnt = 0.0  # 計算反復回数
+        self.__deltaSum = 0.0  # Δxの２乗和(Δx.T・Δx)
+        self.__det = 0.0  # 情報行列Hの行列式
+        self.__cond = 0.0  # 情報行列Hの条件数
 
     def move(self, aV, aW):
         """"移動
@@ -712,7 +712,7 @@ class Robot(object):
             is_calc, delta_sum, det, cond = self.__mTrjEst.updateEstPose()
             loop_cnt += 1
 
-            print("Loop({0}):Δxの２乗和 = {1}, 行列式 = {2}, 条件数 = {3}".format(loop_cnt, delta_sum, det, cond))
+            print(" Loop({0}):Δxの２乗和 = {1}, 行列式 = {2}, 条件数 = {3}".format(loop_cnt, delta_sum, det, cond))
 
         self.__isCalc = is_calc
         self.__loopCnt = loop_cnt
@@ -749,20 +749,14 @@ class Robot(object):
             kdgMsg = "NG"
 
         # ラベル描写
-
-#        txtstr = r"Status:\n Calculated propriety: {0}\n \
-#                    Number of iterations: {1}\n \
-#                    $\sum_{} x_i$: {2}\n \
-#                    det:{3}\n Condition number:{4}" \
-#                    .format(kdgMsg, self.__loopCnt, self.__deltaSum, self.__det, self.__cond)
-        txtstr = "<Status>\n Calculated propriety: %s\n Number of iterations: %d\n $\sum_{} \, \Delta{x}^T \Delta{x}$: %f\n $det(boldsymbol{H})$:%f\n Condition number:%f$"%(kdgMsg, self.__loopCnt, self.__deltaSum, self.__det, self.__cond)
+        txtstr = "<Status>\n Calculated Propriety: %s\n Number of Iterations: %d\n $\sum_{} \, \Delta{x}^T \Delta{x}$: %e\n $det(H)$:%e\n Condition Number:%e" % (kdgMsg, self.__loopCnt, self.__deltaSum, self.__det, self.__cond)
 
         # these are matplotlib.patch.Patch propertie
         props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
 
         # place a text box in upper left in axes coords
-        x, y =0.05, 0.95
-        aAx.text(x, y, txtstr, transform=aAx.transAxes, fontsize=14,
+        x, y = 0.01, 0.99
+        aAx.text(x, y, txtstr, transform=aAx.transAxes, fontsize=10,
                  verticalalignment='top', bbox=props)
 
 
@@ -782,12 +776,12 @@ class Robot(object):
         u = np.cos(aPoses[-1][2, 0])
         v = np.sin(aPoses[-1][2, 0])
         # 矢印描写
-        aAx.quiver(x, y, u, v, color = aColor, angles = "xy", scale_units = "xy", scale = 1)
+        aAx.quiver(x, y, u, v, color=aColor, angles="xy", scale_units="xy", scale=1)
 
         # 軌跡描写
         pxa = [e[0, 0] for e in aPoses]
         pya = [e[1, 0] for e in aPoses]
-        aAx.plot(pxa, pya, c = aColor, linewidth = 1.0, linestyle = "-", label = aLabel)
+        aAx.plot(pxa, pya, c=aColor, linewidth=1.0, linestyle="-", label=aLabel)
 
     def __drawActualLandMark(self, aAx):
         """"実測ランドマーク描写
@@ -820,8 +814,8 @@ class Robot(object):
                     ellLbl = "Error Ellipse: %.2f[%%]" % self.__mConfidence_interval
                 else:
                     ellLbl = ""
-                e = patches.Ellipse(p, x, y, angle = np.rad2deg(ang_rad), linewidth = 2, alpha = 0.2,
-                             facecolor = 'yellow', edgecolor = 'black', label = ellLbl)
+                e = patches.Ellipse(p, x, y, angle=np.rad2deg(ang_rad), linewidth=2, alpha=0.2,
+                             facecolor='yellow', edgecolor='black', label=ellLbl)
                 aAx.add_patch(e)
 
                 lst_px.append(px)
@@ -833,11 +827,11 @@ class Robot(object):
                 yl = np.array([ps[1], py])
 
                 soa.append([ps[0], ps[1], px - ps[0], py - ps[1]])
-                aAx.plot(xl, yl, '--', c = 'green')
+                aAx.plot(xl, yl, '--', c='green')
                 flag = True
 
             # 実測ランドマーク描写
-            aAx.scatter(lst_px, lst_py, s = 100, c = "red", marker = "*", alpha = 0.5, linewidths = "2", edgecolors = "red", label = "Land Mark(Actual)")
+            aAx.scatter(lst_px, lst_py, s=100, c="red", marker="*", alpha=0.5, linewidths="2", edgecolors="red", label="Land Mark(Actual)")
 
     def __drawAx2(self, aAx):
         """"描写(軸2)
@@ -852,15 +846,15 @@ class Robot(object):
             pya = [obs.getDist() * np.sin(obs.getDir()) for obs in obsCrnt]
             pta = [obs.getOrient() for obs in obsCrnt]
             # ランドマーク描写
-            aAx.scatter(pxa, pya, s = 100, c = "yellow", marker = "*", alpha = 0.5, linewidths = "2",
-                        edgecolors = "orange", label = "Land Mark(True)")
+            aAx.scatter(pxa, pya, s=100, c="yellow", marker="*", alpha=0.5, linewidths="2",
+                        edgecolors="orange", label="Land Mark(True)")
             x = pxa
             y = pya
             # 矢印（ベクトル）の成分
             u = gain * np.cos(pta)
             v = gain * np.sin(pta)
             # 矢印描写
-            aAx.quiver(x, y, u, v, color = "orange", angles = "xy", scale_units = "xy", scale = 1)
+            aAx.quiver(x, y, u, v, color="orange", angles="xy", scale_units="xy", scale=1)
 
         obsCrnt = self.__mObsActu[-1]
         if len(obsCrnt) != 0:
@@ -868,8 +862,8 @@ class Robot(object):
             pya = [obs.getDist() * np.sin(obs.getDir()) for obs in obsCrnt]
             pta = [obs.getOrient() for obs in obsCrnt]
             # ランドマーク描写
-            aAx.scatter(pxa, pya, s = 100, c = "red", marker = "*", alpha = 0.5, linewidths = "2",
-                        edgecolors = "red", label = "Land Mark(Actual)")
+            aAx.scatter(pxa, pya, s=100, c="red", marker="*", alpha=0.5, linewidths="2",
+                        edgecolors="red", label="Land Mark(Actual)")
 
             x = pxa
             y = pya
@@ -877,7 +871,7 @@ class Robot(object):
             u = gain * np.cos(pta)
             v = gain * np.sin(pta)
             # 矢印描写
-            aAx.quiver(x, y, u, v, color = "red", angles = "xy", scale_units = "xy", scale = 1)
+            aAx.quiver(x, y, u, v, color="red", angles="xy", scale_units="xy", scale=1)
 
             flag = False
             for obs in obsCrnt:
@@ -893,19 +887,19 @@ class Robot(object):
                     ellLbl = 'Error Ellipse: %.2f[%%]' % self.__mConfidence_interval
                 else:
                     ellLbl = ""
-                ell = patches.Ellipse(p, x, y, angle = np.rad2deg(ang_rad), linewidth = 2, alpha = 0.2,
-                             facecolor = 'yellow', edgecolor = 'black', label = ellLbl)
+                ell = patches.Ellipse(p, x, y, angle=np.rad2deg(ang_rad), linewidth=2, alpha=0.2,
+                             facecolor='yellow', edgecolor='black', label=ellLbl)
                 aAx.add_patch(ell)
 
                 # ロボット-ランドマーク間線分描写
                 xl = np.array([0, p[0]])
                 yl = np.array([0, p[1]])
-                aAx.plot(xl, yl, '--', c = 'green')
+                aAx.plot(xl, yl, '--', c='green')
                 flag = True
 
         # ロボット描写
-        aAx.scatter(0, 0, s = 100, c = "blue", marker = "o", alpha = 0.5, label = "Robot")
-        aAx.quiver(0, 0, 0, 1, color = "blue", angles = "xy", scale_units = "xy", scale = 1)
+        aAx.scatter(0, 0, s=100, c="blue", marker="o", alpha=0.5, label="Robot")
+        aAx.quiver(0, 0, 0, 1, color="blue", angles="xy", scale_units="xy", scale=1)
 
 
 
@@ -966,17 +960,17 @@ def graph_based_slam(i, aPeriod_ms):
     plt.cla()
 
     # サブプロットを追加
-    ax1 = plt.subplot2grid((1, 2), (0, 0), aspect = "equal", adjustable = "box-forced")
-    ax2 = plt.subplot2grid((1, 2), (0, 1), aspect = "equal", adjustable = "box-forced")
+    ax1 = plt.subplot2grid((1, 2), (0, 0), aspect="equal", adjustable="box-forced")
+    ax2 = plt.subplot2grid((1, 2), (0, 1), aspect="equal", adjustable="box-forced")
 
     gRbt.draw(ax1, ax2)
 
     ax1.set_xlabel("x [m]")
     ax1.set_ylabel("y [m]")
     ax1.set_title("World System")
-    ax1.axis("equal", adjustable = "box")
+    ax1.axis("equal", adjustable="box")
     ax1.grid()
-    ax1.legend(fontsize = 10)
+    ax1.legend(fontsize=10)
 
     ax2.set_xlabel("x [m]")
     ax2.set_ylabel("y [m]")
@@ -984,14 +978,14 @@ def graph_based_slam(i, aPeriod_ms):
     rng = SCN_SENS_RANGE_m + 5.0
     ax2.axis([-rng, rng, -rng, rng])
     ax2.grid()
-    ax2.legend(fontsize = 10)
+    ax2.legend(fontsize=10)
 
 if __name__ == "__main__":
 
     frame_cnt = int(36 * 1000 / PERIOD_ms)
-    fig = plt.figure(figsize = (18, 9))
-    ani = animation.FuncAnimation(fig, graph_based_slam, frames = frame_cnt, fargs = (PERIOD_ms,), blit = False,
-                                  interval = PERIOD_ms, repeat = False)
+    fig = plt.figure(figsize=(18, 9))
+    ani = animation.FuncAnimation(fig, graph_based_slam, frames=frame_cnt, fargs=(PERIOD_ms,), blit=False,
+                                  interval=PERIOD_ms, repeat=False)
 
     # ani.save("Localization_by_pf.mp4", bitrate=6000)
 
