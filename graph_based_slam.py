@@ -987,7 +987,7 @@ if __name__ == "__main__":
     ani = animation.FuncAnimation(fig, graph_based_slam, frames=frame_cnt, fargs=(PERIOD_ms,), blit=False,
                                   interval=PERIOD_ms, repeat=False)
 
-    # ani.save("Localization_by_pf.mp4", bitrate=6000)
+    # ani.save("graph-based_slam.mp4", bitrate=6000)
 
     plt.show()
 
