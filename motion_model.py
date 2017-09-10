@@ -12,18 +12,21 @@ from mylib import limit
 import matplotlib.pyplot as plt
 
 class MotionModel(object):
-    """動作モデルclass"""
+    """動作モデルclass
+        モデルの仕様は書籍『確率ロボティクス』の「5章 ロボットの動作」。
+        詳細は書籍を参考。
+    """
 
     def __init__(self, dt, a1, a2, a3, a4, a5, a6):
         """コンストラクタ
         引数：
             a1～a6：雑音パラメータ
+             ※詳細は書籍を参照
         返り値：
             なし
         """
         self.__mDt = dt
         self.__mNoise = (a1, a2, a3, a4, a5, a6)
-
 
     def moveWithNoise(self, aPose, aV, aW):
         """動作モデル（ノイズ有り）
@@ -81,6 +84,8 @@ class MotionModel(object):
                             [pt]])
 
         return newPose
+
+
 
 
 if __name__ == "__main__":

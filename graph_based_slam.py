@@ -7,9 +7,7 @@
 # attention    none
 #==============================================================================
 
-import numpy.matlib
 import numpy as np
-import scipy as sp
 import matplotlib.pyplot as plt
 import itertools
 from mylib import error_ellipse
@@ -17,7 +15,6 @@ from mylib import limit
 from mylib import transform as tf
 import motion_model as mm
 from matplotlib import animation, patches
-import copy
 from copy import deepcopy
 
 class Observation:
@@ -74,7 +71,9 @@ class Observation:
 
 
 class ScanSensor(object):
-    """スキャンセンサclass"""
+    """スキャンセンサclass
+        扇型にスキャンできるセンサを想定。
+    """
 
     # 観測雑音定義(デフォルト値)
     __R_Dist = 10 / 100  # ランドマーク距離雑音ゲイン
@@ -166,7 +165,7 @@ class ScanSensor(object):
                 distActu = np.random.normal(distLm[i], distLm[i] * ScanSensor.__R_Dist)
                 dirActu = limit.limit_angle(np.random.normal(dirLm_rad[i], ScanSensor.__R_DirSigma))
                 orientActu = limit.limit_angle(np.random.normal(orientLm_rad[i], ScanSensor.__R_OrientSigma))
-                #観測結果格納
+                # 観測結果格納
                 obsWithNoise.append(Observation(i, distActu, dirActu, orientActu))
                 obsWithoutNoise.append(Observation(i, distLm[i], dirLm_rad[i], orientLm_rad[i]))
 
@@ -188,9 +187,9 @@ class ScanSensor(object):
         dist = aLandMarkDist * ScanSensor.__R_Dist
         dir_cov = (aLandMarkDist * np.sin(ScanSensor.__R_DirSigma)) ** 2
         orient_cov = ScanSensor.__R_DirSigma ** 2 + ScanSensor.__R_OrientSigma ** 2
-        covMat = np.array([[dist ** 2,       0, 0         ],
+        covMat = np.array([[dist ** 2, 0, 0         ],
                            [        0, dir_cov, 0         ],
-                           [        0,       0, orient_cov]])
+                           [        0, 0, orient_cov]])
 
         return covMat
 
@@ -208,8 +207,8 @@ class ScanSensor(object):
         c = np.cos(ang)
         s = np.sin(ang)
         rotMat = np.array([[c, -s, 0],
-                           [s,  c, 0],
-                           [0,  0, 1]])
+                           [s, c, 0],
+                           [0, 0, 1]])
 
         covMatWorld = rotMat @ aCovMat @ rotMat.T
 
@@ -227,8 +226,8 @@ class ScanSensor(object):
         c = np.cos(aLandMarkDir)
         s = np.sin(aLandMarkDir)
         rotMat = np.array([[c, -s, 0],
-                           [s,  c, 0],
-                           [0,  0, 1]])
+                           [s, c, 0],
+                           [0, 0, 1]])
 
         covMatRobot = rotMat @ aCovMat @ rotMat.T
 
@@ -336,6 +335,9 @@ class TrajectoryEstimator(object):
         """"コンストラクタ
         引数：
             aPose：ロボット姿勢
+                aPose[0, 0]：x座標[m]
+                aPose[1, 0]：y座標[m]
+                aPose[2, 0]：方角(rad)
         """
         self.__mPosesEst = [aPose]
         self.__mIsObs = [True]
@@ -402,7 +404,6 @@ class TrajectoryEstimator(object):
 
         # 姿勢誤差算出
         err = relPoseRbt - relPoseObs
-#        print("error:ID<{0}>,  x = {1:.3f}[m], y = {2:.3f}[m], θ = {3:.3f}[deg]".format(landMarkId, err[0, 0], err[1, 0], np.rad2deg(err[2, 0])))
 
         # 計測座標系での情報行列算出
         lmCovCrntM = ScanSensor.getLandMarkCovMatrixOnMeasurementSys(obsPoseAft.getDist())
@@ -414,13 +415,13 @@ class TrajectoryEstimator(object):
 
         # ヤコビアン算出
         theta = rbtPoseBfr[2, 0] + obsPoseBfr.getDir()
-        jacobMatBfr = np.array([[-1,  0, obsPoseBfr.getDist() * np.sin(theta)],
+        jacobMatBfr = np.array([[-1, 0, obsPoseBfr.getDist() * np.sin(theta)],
                                 [ 0, -1, -obsPoseBfr.getDist() * np.cos(theta)],
-                                [ 0,  0, -1                            ]])
+                                [ 0, 0, -1                            ]])
         theta = rbtPoseAft[2, 0] + obsPoseAft.getDir()
-        jacobMatAft = np.array([[ 1,  0, -obsPoseAft.getDist() * np.sin(theta)],
-                                [ 0,  1,  obsPoseAft.getDist() * np.cos(theta)],
-                                [ 0,  0,  1                            ]])
+        jacobMatAft = np.array([[ 1, 0, -obsPoseAft.getDist() * np.sin(theta)],
+                                [ 0, 1, obsPoseAft.getDist() * np.cos(theta)],
+                                [ 0, 0, 1                            ]])
 
         # 情報行列と情報ベクトルを追加する
         self.__mEdge.append(Edge(timeBfr,
@@ -450,9 +451,16 @@ class TrajectoryEstimator(object):
         引数：
             なし
         戻り値：
-            なし
+            is_calc：算出可否判定
+            delta_sum：Δxの２乗和
+            det：情報行列Hの行列式
+            cond：情報行列Hの条件数
 
         """
+        is_calc = False
+        delta_sum = 0.0
+        det = 0.0
+        cond = 0.0
         leng = len(self.__KeepLandMarkTime) * 3
 
         if leng > 3:
@@ -460,8 +468,8 @@ class TrajectoryEstimator(object):
             self.__mMatH = np.zeros((leng, leng))
             self.__mVecB = np.zeros((leng, 1))
 
-            #TODO:後で削除
-            self.__mMatH[0:3,0:3] += np.identity(3)*10000
+            # TODO:後で削除
+            self.__mMatH[0:3, 0:3] += np.identity(3) * 10000
 
             # 昇順でソート
             timeList = sorted(self.__KeepLandMarkTime)
@@ -481,29 +489,26 @@ class TrajectoryEstimator(object):
                 self.__mVecB[pa:pa + 3, 0][:, np.newaxis] += edg.mVecB_Aft
 
             det = np.linalg.det(self.__mMatH)
-            dbg_cond = np.linalg.cond(self.__mMatH)
-            print("行列式 = {0}".format(det))
-            print("条件数 = {0}".format(dbg_cond))
-            if (10 ** 15 < det) and (dbg_cond < 10 ** 15):
+            cond = np.linalg.cond(self.__mMatH)
+            if (10 ** 15 < det) and (cond < 10 ** 15):
                 inv = np.linalg.inv(self.__mMatH)
-                delta = - inv @ self.__mVecB
+                delta = -inv @ self.__mVecB
                 for i, tm in enumerate(timeList):
                     self.__mPosesEst[tm][0, 0] += delta[i * 3]
                     self.__mPosesEst[tm][1, 0] += delta[i * 3 + 1]
                     self.__mPosesEst[tm][2, 0] += delta[i * 3 + 2]
 
                 delta_sum = float(delta.T @ delta)
-                print("Δx.T・Δx = {0}".format(delta_sum))
+                is_calc = True
             else:
-                delta_sum = 0.0
-                print("det = 0")
+                print("can Not calculate trajectory!")
 
             # クリア
             self.__mEdge = []
             self.__KeepLandMarkId = []
             self.__KeepLandMarkTime = []
 
-        return delta_sum
+        return is_calc, delta_sum, det, cond
 
 
     def __calcRelativePoseByRobotPose(self, aPoseAft, aPoseBfr):
@@ -623,11 +628,17 @@ class Robot(object):
         self.__mEllipse = error_ellipse.ErrorEllipse(self.__mConfidence_interval)
 
         self.__mScnSnsr.scan(aPose)
-        self.__observe(self.__mPosesActu[-1], len(self.__mPosesTrue)-1, self.__mTime)
+        self.__observe(self.__mPosesActu[-1], len(self.__mPosesTrue) - 1, self.__mTime)
 
         # ガウス・ニュートン法による、反復回数を決定する閾値
-        #  Σerr.T・err の値が閾値以下となったら計算終了
+        #  Δxの２乗和(Δx.T・Δx)の値が閾値以下となったら計算終了
         self.__DELTA_SUM_TH = 1.0
+
+        self.__isCalc = False   # 軌跡算出可否判定
+        self.__loopCnt = 0.0   # 計算反復回数
+        self.__deltaSum = 0.0   # Δxの２乗和(Δx.T・Δx)
+        self.__det = 0.0   # 情報行列Hの行列式
+        self.__cond = 0.0   # 情報行列Hの条件数
 
     def move(self, aV, aW):
         """"移動
@@ -647,7 +658,7 @@ class Robot(object):
         self.__mPosesTrue.append(poseGues)  # 姿勢（真値）
 
         self.__mTime += 1
-        isObs = self.__observe(self.__mPosesActu[-1], len(self.__mPosesTrue)-1, self.__mTime)
+        isObs = self.__observe(self.__mPosesActu[-1], len(self.__mPosesTrue) - 1, self.__mTime)
         self.__mTrjEst.addPose(deepcopy(poseGues), isObs)
 
     def __observe(self, aPoseActuCrnt, aRobotPoseId, aTime):
@@ -686,23 +697,28 @@ class Robot(object):
         """
         delta_sum = self.__DELTA_SUM_TH
         loop_cnt = 0
+        det = 0
+        cond = 0
 
         while self.__DELTA_SUM_TH <= delta_sum:
-
             lm_num = self.__mScnSnsr.getLandMarkNum()
             for i in range(lm_num):
                 heobj_list = list(filter(lambda obj: obj.getObs().getLandMarkId() == i, self.__mHalfEdges))
-                pair = list(itertools.combinations(heobj_list,2))
+                pair = list(itertools.combinations(heobj_list, 2))
                 for p in pair:
                     self.__mTrjEst.setPairObs(p[0], p[1])
 
             # 情報行列と情報ベクトル更新
-            delta_sum = self.__mTrjEst.updateEstPose()
-
+            is_calc, delta_sum, det, cond = self.__mTrjEst.updateEstPose()
             loop_cnt += 1
 
-            print("Loop({0}):{1}".format(loop_cnt, delta_sum))
+            print("Loop({0}):Δxの２乗和 = {1}, 行列式 = {2}, 条件数 = {3}".format(loop_cnt, delta_sum, det, cond))
 
+        self.__isCalc = is_calc
+        self.__loopCnt = loop_cnt
+        self.__deltaSum = delta_sum
+        self.__det = det
+        self.__cond = cond
 
     def draw(self, aAx1, aAx2):
         """"描写
@@ -710,16 +726,45 @@ class Robot(object):
             aAx1：描写位置1
             aAx2：描写位置2
         """
-        self.__mScnSnsr.draw(aAx1, "green", self.__mPosesActu[-1])
+        self.__drawAx1(aAx1)
+        self.__drawAx2(aAx2)
 
-        self.__drawPoses(aAx1, "red", "True", self.__mPosesTrue)
-        self.__drawPoses(aAx1, "blue", "Actual", self.__mPosesActu)
-        self.__drawActualLandMark(aAx1)
+    def __drawAx1(self, aAx):
+        """"描写(軸1)
+        引数：
+            aAx：描写位置
+        """
+        self.__mScnSnsr.draw(aAx, "green", self.__mPosesActu[-1])
+
+        self.__drawPoses(aAx, "red", "True", self.__mPosesTrue)
+        self.__drawPoses(aAx, "blue", "Actual", self.__mPosesActu)
+        self.__drawActualLandMark(aAx)
 
         estTrajPose = self.__mTrjEst.getEstTrajPose()
-        self.__drawPoses(aAx1, "cyan", "Est", estTrajPose )
+        self.__drawPoses(aAx, "cyan", "Est", estTrajPose)
 
-        self.__debug(aAx2)
+        if self.__isCalc == True:
+            kdgMsg = "OK"
+        else:
+            kdgMsg = "NG"
+
+        # ラベル描写
+
+#        txtstr = r"Status:\n Calculated propriety: {0}\n \
+#                    Number of iterations: {1}\n \
+#                    $\sum_{} x_i$: {2}\n \
+#                    det:{3}\n Condition number:{4}" \
+#                    .format(kdgMsg, self.__loopCnt, self.__deltaSum, self.__det, self.__cond)
+        txtstr = "<Status>\n Calculated propriety: %s\n Number of iterations: %d\n $\sum_{} \, \Delta{x}^T \Delta{x}$: %f\n $det(boldsymbol{H})$:%f\n Condition number:%f$"%(kdgMsg, self.__loopCnt, self.__deltaSum, self.__det, self.__cond)
+
+        # these are matplotlib.patch.Patch propertie
+        props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+
+        # place a text box in upper left in axes coords
+        x, y =0.05, 0.95
+        aAx.text(x, y, txtstr, transform=aAx.transAxes, fontsize=14,
+                 verticalalignment='top', bbox=props)
+
 
     def __drawPoses(self, aAx, aColor, aLabel, aPoses):
         """"ロボット姿勢描写
@@ -751,8 +796,14 @@ class Robot(object):
         戻り値：
             なし
         """
+        flag = False
         obsCrnt = self.__mObsActu[-1]
         poseCrnt = self.__mPosesActu[-1]
+
+        lst_px = []
+        lst_py = []
+        soa = []
+
         if len(obsCrnt) != 0:
             for obs in obsCrnt:
                 obsDist = obs.getDist()
@@ -763,24 +814,36 @@ class Robot(object):
                 x, y, ang_rad = self.__mEllipse.calc_error_ellipse(Pxy)
                 px = (obsDist * np.cos(obsDir + poseCrnt[2, 0] - tf.BASE_ANG)) + poseCrnt[0, 0]
                 py = (obsDist * np.sin(obsDir + poseCrnt[2, 0] - tf.BASE_ANG)) + poseCrnt[1, 0]
-                p = ( px, py )
+                p = (px, py)
                 # 誤差楕円描写
+                if flag == False:
+                    ellLbl = "Error Ellipse: %.2f[%%]" % self.__mConfidence_interval
+                else:
+                    ellLbl = ""
                 e = patches.Ellipse(p, x, y, angle = np.rad2deg(ang_rad), linewidth = 2, alpha = 0.2,
-                             facecolor = 'yellow', edgecolor = 'black', label = 'Error Ellipse: %.2f[%%]' %
-                             self.__mConfidence_interval)
+                             facecolor = 'yellow', edgecolor = 'black', label = ellLbl)
                 aAx.add_patch(e)
-                # 実測ランドマーク描写
-                aAx.scatter(px, py, s = 100, c = "red", marker = "*", alpha = 0.5, linewidths = "2", edgecolors = "red", label = "Land Mark(Actual)")
+
+                lst_px.append(px)
+                lst_py.append(py)
 
                 # ロボット-ランドマーク間線分描写
                 ps = poseCrnt[0:2, 0].T
                 xl = np.array([ps[0], px])
                 yl = np.array([ps[1], py])
-                aAx.plot(xl, yl, '--', c='green')
 
+                soa.append([ps[0], ps[1], px - ps[0], py - ps[1]])
+                aAx.plot(xl, yl, '--', c = 'green')
+                flag = True
 
-    def __debug(self, aAx):
+            # 実測ランドマーク描写
+            aAx.scatter(lst_px, lst_py, s = 100, c = "red", marker = "*", alpha = 0.5, linewidths = "2", edgecolors = "red", label = "Land Mark(Actual)")
 
+    def __drawAx2(self, aAx):
+        """"描写(軸2)
+        引数：
+            aAx：描写位置
+        """
         gain = 2
 
         obsCrnt = self.__mObsTrue[-1]
@@ -816,6 +879,7 @@ class Robot(object):
             # 矢印描写
             aAx.quiver(x, y, u, v, color = "red", angles = "xy", scale_units = "xy", scale = 1)
 
+            flag = False
             for obs in obsCrnt:
                 obsDist = obs.getDist()
                 obsDir = obs.getDir()
@@ -823,16 +887,21 @@ class Robot(object):
                 lmCovR = self.__mScnSnsr.tfMeasurement2Robot(lmCovM, obsDir)
                 Pxy = lmCovR[0:2, 0:2]
                 x, y, ang_rad = self.__mEllipse.calc_error_ellipse(Pxy)
-                p = ( obsDist * np.cos(obsDir), obsDist * np.sin(obsDir) )
+                p = (obsDist * np.cos(obsDir), obsDist * np.sin(obsDir))
+
+                if flag == False:
+                    ellLbl = 'Error Ellipse: %.2f[%%]' % self.__mConfidence_interval
+                else:
+                    ellLbl = ""
                 ell = patches.Ellipse(p, x, y, angle = np.rad2deg(ang_rad), linewidth = 2, alpha = 0.2,
-                             facecolor = 'yellow', edgecolor = 'black', label = 'Error Ellipse: %.2f[%%]' %
-                             self.__mConfidence_interval)
+                             facecolor = 'yellow', edgecolor = 'black', label = ellLbl)
                 aAx.add_patch(ell)
 
                 # ロボット-ランドマーク間線分描写
                 xl = np.array([0, p[0]])
                 yl = np.array([0, p[1]])
-                aAx.plot(xl, yl, '--', c='green')
+                aAx.plot(xl, yl, '--', c = 'green')
+                flag = True
 
         # ロボット描写
         aAx.scatter(0, 0, s = 100, c = "blue", marker = "o", alpha = 0.5, label = "Robot")
@@ -850,13 +919,15 @@ OMEGA_rps = np.deg2rad(10.0)  # 角速度[rad/s]
 VEL_mps = RADIUS_m * OMEGA_rps  # 速度[m/s]
 
 # ランドマーク
-LAND_MARKS = np.array([[ 0.0, 10.0],
-                       [ 2.0, -3.0],
-                       [ 5.0, 5.0],
-                       [-5.0, -1.0],
-                       [ 9.0, 3.0]])
-
-#LAND_MARKS = np.array([[ 0.0, 0.0]])
+LAND_MARKS = np.array([[ 0.0, 0.0],
+                       [ 14.0, 1.0],
+                       [ 9.0, 9.0],
+                       [ 0.0, 15.0],
+                       [ -11.0, 10.0],
+                       [ -14.0, 1.0],
+                       [ -10.0, -9.0],
+                       [ 0.0, -16.0],
+                       [ 10.0, -11.0]])
 
 # アニメーション更新周期[msec]
 PERIOD_ms = 1000
@@ -882,7 +953,6 @@ def graph_based_slam(i, aPeriod_ms):
     global OMEGA_rps
     global VEL_mps
 
-
     print("TIME:{0:.3f}[s]".format(time_s))
 
     time_s += aPeriod_ms / 1000
@@ -893,7 +963,6 @@ def graph_based_slam(i, aPeriod_ms):
     # ロボット移動軌跡推定
     gRbt.estimateOpticalTrajectory()
 
-
     plt.cla()
 
     # サブプロットを追加
@@ -902,8 +971,6 @@ def graph_based_slam(i, aPeriod_ms):
 
     gRbt.draw(ax1, ax2)
 
-#    print(" x = {0:.3f}[m], y = {1:.3f}[m], θ = {2:.3f}[deg]".format(x[0, 0], x[1, 0], np.rad2deg(x[2, 0])))
-
     ax1.set_xlabel("x [m]")
     ax1.set_ylabel("y [m]")
     ax1.set_title("World System")
@@ -911,22 +978,18 @@ def graph_based_slam(i, aPeriod_ms):
     ax1.grid()
     ax1.legend(fontsize = 10)
 
-
     ax2.set_xlabel("x [m]")
     ax2.set_ylabel("y [m]")
     ax2.set_title("Robot System")
-    range = SCN_SENS_RANGE_m + 5.0
-    ax2.axis([-range, range, -range, range])
+    rng = SCN_SENS_RANGE_m + 5.0
+    ax2.axis([-rng, rng, -rng, rng])
     ax2.grid()
     ax2.legend(fontsize = 10)
 
 if __name__ == "__main__":
 
-
     frame_cnt = int(36 * 1000 / PERIOD_ms)
-
     fig = plt.figure(figsize = (18, 9))
-
     ani = animation.FuncAnimation(fig, graph_based_slam, frames = frame_cnt, fargs = (PERIOD_ms,), blit = False,
                                   interval = PERIOD_ms, repeat = False)
 
