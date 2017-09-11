@@ -404,7 +404,9 @@ class TrajectoryEstimator(object):
 
         # 姿勢誤差算出
         err = relPoseRbt - relPoseObs
-        print(" err = {0}".format(np.rad2deg(err[2, 0])))
+        err[2, 0] = limit.limit_angle(err[2, 0])
+
+        # print(" err = {0}".format(np.rad2deg(err[2, 0])))
 
         # 計測座標系での情報行列算出
         lmCovCrntM = ScanSensor.getLandMarkCovMatrixOnMeasurementSys(obsPoseAft.getDist())
@@ -415,11 +417,11 @@ class TrajectoryEstimator(object):
         infoMat = np.linalg.inv(sumCov)
 
         # ヤコビアン算出
-        theta = rbtPoseBfr[2, 0] + obsPoseBfr.getDir()
+        theta = limit.limit_angle(rbtPoseBfr[2, 0] + obsPoseBfr.getDir())
         jacobMatBfr = np.array([[-1, 0, obsPoseBfr.getDist() * np.sin(theta)],
                                 [ 0, -1, -obsPoseBfr.getDist() * np.cos(theta)],
                                 [ 0, 0, -1                            ]])
-        theta = rbtPoseAft[2, 0] + obsPoseAft.getDir()
+        theta = limit.limit_angle(rbtPoseAft[2, 0] + obsPoseAft.getDir())
         jacobMatAft = np.array([[ 1, 0, -obsPoseAft.getDist() * np.sin(theta)],
                                 [ 0, 1, obsPoseAft.getDist() * np.cos(theta)],
                                 [ 0, 0, 1                            ]])
@@ -470,7 +472,7 @@ class TrajectoryEstimator(object):
             self.__mVecB = np.zeros((leng, 1))
 
             # TODO:後で削除
-            self.__mMatH[0:3, 0:3] += np.identity(3) * 10000
+            self.__mMatH[0:3, 0:3] += np.identity(3) * (10 ** 4)
 
             # 昇順でソート
             timeList = sorted(self.__KeepLandMarkTime)
@@ -491,18 +493,14 @@ class TrajectoryEstimator(object):
 
             det = np.linalg.det(self.__mMatH)
             cond = np.linalg.cond(self.__mMatH)
-            if (10 ** 15 < det) and (cond < 10 ** 15):
+            if (0.1 < det) and (cond < 10 ** 15):
                 inv = np.linalg.inv(self.__mMatH)
                 delta = -inv @ self.__mVecB
                 for i, tm in enumerate(timeList):
                     self.__mPosesEst[tm][0, 0] += delta[i * 3]
                     self.__mPosesEst[tm][1, 0] += delta[i * 3 + 1]
                     self.__mPosesEst[tm][2, 0] = limit.limit_angle(self.__mPosesEst[tm][2, 0] + delta[i * 3 + 2])
-                    print("delta = {0}, tm = {1}, det = {2}, cond = {3}".format(np.rad2deg(delta[i * 3 + 2]), tm, det, cond))
-
-                    if np.abs(np.rad2deg(delta[2])) > 1.0:
-                        print("Error!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-
+                    # print("delta = {0}, tm = {1}, det = {2}, cond = {3}".format(np.rad2deg(delta[i * 3 + 2]), tm, det, cond))
                 delta_sum = float(delta.T @ delta)
                 is_calc = True
             else:
@@ -512,9 +510,6 @@ class TrajectoryEstimator(object):
             self.__mEdge = []
             self.__KeepLandMarkId = []
             self.__KeepLandMarkTime = []
-
-            for a in self.__mPosesEst:
-                print("PosesEst = {0}".format(np.rad2deg(a[2, 0])))
 
         return is_calc, delta_sum, det, cond
 
@@ -606,7 +601,8 @@ class Robot(object):
                          [n番目LMのX座標, n番目LMのY座標]]
         """
         self.__mScnSnsr = ScanSensor(aScanRng_m, aScanAng_rad, aLandMarks)
-        self.__mScnSnsr.setNoiseParam(0.001, 0.001, 0.001)
+        self.__mScnSnsr.setNoiseParam(3, 1, 1)
+#        self.__mScnSnsr.setNoiseParam(0.01, 0.01, 0.01)
 
         self.__mMvMdl = mm.MotionModel(aDt, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)
 #        self.__mMvMdl = mm.MotionModel(aDt, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01)
@@ -618,7 +614,6 @@ class Robot(object):
 
         #---------- 姿勢 ----------
         self.__mPosesActu = [aPose]  # 姿勢（実際値）
-        self.__mPosesTrue = [aPose]  # 姿勢（真値）
         #---------- 制御 ----------
         self.__mCtr = []
         #---------- 観測 ----------
@@ -626,22 +621,16 @@ class Robot(object):
         self.__mObsTrue = []
         self.__mHalfEdges = []
 
-        #---------- 情報行列 ----------
-
-        # 空の情報行列と情報ベクトルを作成
-        self.__matH = np.zeros((3, 3))
-        self.__vecB = np.zeros((3, 1))
-
         # 誤差楕円の信頼区間[%]
         self.__mConfidence_interval = 99.0
         self.__mEllipse = error_ellipse.ErrorEllipse(self.__mConfidence_interval)
 
         self.__mScnSnsr.scan(aPose)
-        self.__observe(self.__mPosesActu[-1], len(self.__mPosesTrue) - 1, self.__mTime)
+        self.__observe(aPose, len(self.__mPosesActu) - 1, self.__mTime)
 
         # ガウス・ニュートン法による、反復回数を決定する閾値
         #  Δxの２乗和(Δx.T・Δx)の値が閾値以下となったら計算終了
-        self.__DELTA_SUM_TH = 1.0
+        self.__DELTA_SUM_TH = 0.01
 
         self.__isCalc = False  # 軌跡算出可否判定
         self.__loopCnt = 0.0  # 計算反復回数
@@ -659,16 +648,15 @@ class Robot(object):
         """
         # 移動
         poseActu = self.__mMvMdl.moveWithNoise(self.__mPosesActu[-1], aV, aW)
-        poseTrue = self.__mMvMdl.moveWithoutNoise(self.__mPosesTrue[-1], aV, aW)
+        poseTrue = self.__mMvMdl.moveWithoutNoise(self.__mPosesActu[-1], aV, aW)
 
         # 履歴保持
         self.__mCtr.append(np.array([aV, aW]))  # 制御
-        self.__mPosesActu.append(poseActu)  # 姿勢（実際値）
-        self.__mPosesTrue.append(poseTrue)  # 姿勢（真値）
+        self.__mPosesActu.append(poseActu)
 
         self.__mTime += 1
         isObs = self.__observe(poseActu, len(self.__mPosesActu) - 1, self.__mTime)
-        self.__mTrjEst.addPose(deepcopy(poseActu), isObs)
+        self.__mTrjEst.addPose(deepcopy(poseTrue), isObs)
 
     def __observe(self, aPoseActuCrnt, aRobotPoseId, aTime):
         """"観測
@@ -745,7 +733,6 @@ class Robot(object):
         """
         self.__mScnSnsr.draw(aAx, "green", self.__mPosesActu[-1])
 
-        self.__drawPoses(aAx, "red", "True", self.__mPosesTrue)
         self.__drawPoses(aAx, "blue", "Actual", self.__mPosesActu)
         self.__drawActualLandMark(aAx)
 
@@ -779,7 +766,6 @@ class Robot(object):
         戻り値：
             なし
         """
-
         for p in aPoses:
             x = p[0, 0]
             y = p[1, 0]
@@ -935,7 +921,7 @@ LAND_MARKS = np.array([[ 0.0, 0.0],
                        [ 10.0, -11.0]])
 
 # アニメーション更新周期[msec]
-PERIOD_ms = 1000
+PERIOD_ms = 2000
 
 x_base = np.array([[10.0],  # x座標[m]
                    [ 0.0],  # y座標[m]
