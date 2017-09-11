@@ -470,7 +470,7 @@ class TrajectoryEstimator(object):
             self.__mVecB = np.zeros((leng, 1))
 
             # TODO:後で削除
-            self.__mMatH[0:3, 0:3] += np.identity(3) * 100000
+            self.__mMatH[0:3, 0:3] += np.identity(3) * 10000
 
             # 昇順でソート
             timeList = sorted(self.__KeepLandMarkTime)
