@@ -404,6 +404,7 @@ class TrajectoryEstimator(object):
 
         # 姿勢誤差算出
         err = relPoseRbt - relPoseObs
+        print(" err = {0}".format(np.rad2deg(err[2, 0])))
 
         # 計測座標系での情報行列算出
         lmCovCrntM = ScanSensor.getLandMarkCovMatrixOnMeasurementSys(obsPoseAft.getDist())
@@ -469,7 +470,7 @@ class TrajectoryEstimator(object):
             self.__mVecB = np.zeros((leng, 1))
 
             # TODO:後で削除
-            self.__mMatH[0:3, 0:3] += np.identity(3) * 10000
+            self.__mMatH[0:3, 0:3] += np.identity(3) * 100000
 
             # 昇順でソート
             timeList = sorted(self.__KeepLandMarkTime)
@@ -496,7 +497,11 @@ class TrajectoryEstimator(object):
                 for i, tm in enumerate(timeList):
                     self.__mPosesEst[tm][0, 0] += delta[i * 3]
                     self.__mPosesEst[tm][1, 0] += delta[i * 3 + 1]
-                    self.__mPosesEst[tm][2, 0] += delta[i * 3 + 2]
+                    self.__mPosesEst[tm][2, 0] = limit.limit_angle(self.__mPosesEst[tm][2, 0] + delta[i * 3 + 2])
+                    print("delta = {0}, tm = {1}, det = {2}, cond = {3}".format(np.rad2deg(delta[i * 3 + 2]), tm, det, cond))
+
+                    if np.abs(np.rad2deg(delta[2])) > 1.0:
+                        print("Error!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 
                 delta_sum = float(delta.T @ delta)
                 is_calc = True
@@ -507,6 +512,9 @@ class TrajectoryEstimator(object):
             self.__mEdge = []
             self.__KeepLandMarkId = []
             self.__KeepLandMarkTime = []
+
+            for a in self.__mPosesEst:
+                print("PosesEst = {0}".format(np.rad2deg(a[2, 0])))
 
         return is_calc, delta_sum, det, cond
 
@@ -529,6 +537,7 @@ class TrajectoryEstimator(object):
                 rel[2, 0]：方角(rad)
         """
         rel = aPoseAft - aPoseBfr
+        rel[2, 0] = limit.limit_angle(rel[2, 0])
 
         return rel
 
@@ -569,7 +578,7 @@ class TrajectoryEstimator(object):
         """
         px = aObsPoseAft[0] * np.cos(aObsPoseAft[1]) - aObsPoseBfr[0] * np.cos(aObsPoseBfr[1])
         py = aObsPoseAft[0] * np.sin(aObsPoseAft[1]) - aObsPoseBfr[0] * np.sin(aObsPoseBfr[1])
-        pt = aObsPoseAft[2] - aObsPoseBfr[2]
+        pt = limit.limit_angle(aObsPoseAft[2] - aObsPoseBfr[2])
 
         rel = np.array([[px],
                         [py],
@@ -597,7 +606,7 @@ class Robot(object):
                          [n番目LMのX座標, n番目LMのY座標]]
         """
         self.__mScnSnsr = ScanSensor(aScanRng_m, aScanAng_rad, aLandMarks)
-        self.__mScnSnsr.setNoiseParam(3.0, 3.0, 3.0)
+        self.__mScnSnsr.setNoiseParam(0.001, 0.001, 0.001)
 
         self.__mMvMdl = mm.MotionModel(aDt, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)
 #        self.__mMvMdl = mm.MotionModel(aDt, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01)
@@ -650,16 +659,16 @@ class Robot(object):
         """
         # 移動
         poseActu = self.__mMvMdl.moveWithNoise(self.__mPosesActu[-1], aV, aW)
-        poseGues = self.__mMvMdl.moveWithoutNoise(self.__mPosesTrue[-1], aV, aW)
+        poseTrue = self.__mMvMdl.moveWithoutNoise(self.__mPosesTrue[-1], aV, aW)
 
         # 履歴保持
         self.__mCtr.append(np.array([aV, aW]))  # 制御
         self.__mPosesActu.append(poseActu)  # 姿勢（実際値）
-        self.__mPosesTrue.append(poseGues)  # 姿勢（真値）
+        self.__mPosesTrue.append(poseTrue)  # 姿勢（真値）
 
         self.__mTime += 1
-        isObs = self.__observe(self.__mPosesActu[-1], len(self.__mPosesTrue) - 1, self.__mTime)
-        self.__mTrjEst.addPose(deepcopy(poseGues), isObs)
+        isObs = self.__observe(poseActu, len(self.__mPosesActu) - 1, self.__mTime)
+        self.__mTrjEst.addPose(deepcopy(poseActu), isObs)
 
     def __observe(self, aPoseActuCrnt, aRobotPoseId, aTime):
         """"観測
@@ -770,13 +779,15 @@ class Robot(object):
         戻り値：
             なし
         """
-        x = aPoses[-1][0, 0]
-        y = aPoses[-1][1, 0]
-        # 矢印（ベクトル）の成分
-        u = np.cos(aPoses[-1][2, 0])
-        v = np.sin(aPoses[-1][2, 0])
-        # 矢印描写
-        aAx.quiver(x, y, u, v, color=aColor, angles="xy", scale_units="xy", scale=1)
+
+        for p in aPoses:
+            x = p[0, 0]
+            y = p[1, 0]
+            # 矢印（ベクトル）の成分
+            u = np.cos(p[2, 0])
+            v = np.sin(p[2, 0])
+            # 矢印描写
+            aAx.quiver(x, y, u, v, color=aColor, angles="xy", scale_units="xy", scale=1)
 
         # 軌跡描写
         pxa = [e[0, 0] for e in aPoses]
