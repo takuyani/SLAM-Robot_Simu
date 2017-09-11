@@ -601,11 +601,8 @@ class Robot(object):
                          [n番目LMのX座標, n番目LMのY座標]]
         """
         self.__mScnSnsr = ScanSensor(aScanRng_m, aScanAng_rad, aLandMarks)
-        self.__mScnSnsr.setNoiseParam(3, 1, 1)
-#        self.__mScnSnsr.setNoiseParam(0.01, 0.01, 0.01)
-
+        self.__mScnSnsr.setNoiseParam(5, 2, 2)
         self.__mMvMdl = mm.MotionModel(aDt, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1)
-#        self.__mMvMdl = mm.MotionModel(aDt, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01)
         self.__mTrjEst = TrajectoryEstimator(aPose)
 
         #---------- 制御周期 ----------
@@ -733,11 +730,11 @@ class Robot(object):
         """
         self.__mScnSnsr.draw(aAx, "green", self.__mPosesActu[-1])
 
-        self.__drawPoses(aAx, "blue", "Actual", self.__mPosesActu)
+        self.__drawPoses(aAx, "red", "Actual", self.__mPosesActu)
         self.__drawActualLandMark(aAx)
 
         estTrajPose = self.__mTrjEst.getEstTrajPose()
-        self.__drawPoses(aAx, "cyan", "Est", estTrajPose)
+        self.__drawPoses(aAx, "blue", "Est", estTrajPose)
 
         if self.__isCalc == True:
             kdgMsg = "OK"
