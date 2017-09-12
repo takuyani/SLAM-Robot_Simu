@@ -730,7 +730,7 @@ class Robot(object):
         """
         self.__mScnSnsr.draw(aAx, "green", self.__mPosesActu[-1])
 
-        self.__drawPoses(aAx, "red", "Actual", self.__mPosesActu)
+        self.__drawPoses(aAx, "red", "Actual Trajectory", self.__mPosesActu)
         self.__drawActualLandMark(aAx)
 
         estTrajPose = self.__mTrjEst.getEstTrajPose()
@@ -981,7 +981,7 @@ if __name__ == "__main__":
     ani = animation.FuncAnimation(fig, graph_based_slam, frames=frame_cnt, fargs=(PERIOD_ms,), blit=False,
                                   interval=PERIOD_ms, repeat=False)
 
-    # ani.save("graph-based_slam.mp4", bitrate=6000)
+    ani.save("graph-based_slam.mp4", bitrate=6000)
 
     plt.show()
 
