@@ -734,7 +734,7 @@ class Robot(object):
         self.__drawActualLandMark(aAx)
 
         estTrajPose = self.__mTrjEst.getEstTrajPose()
-        self.__drawPoses(aAx, "blue", "Est", estTrajPose)
+        self.__drawPoses(aAx, "blue", "Estimated Trajectory", estTrajPose)
 
         if self.__isCalc == True:
             kdgMsg = "OK"
