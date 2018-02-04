@@ -12,6 +12,8 @@ __SLAM-Robot_Simu__ はSLAM-Robot開発のためのシミュレーション・�
 以下、リポジトリ構成です。
 * __extended_kalman_filter.py__　⇒拡張カルマンフィルタ
 * __particle_filter.py__　⇒パーティクルフィルタ
+* __graph_based_slam.py__　⇒Graph based SLAM
+* __motion_model.py__　⇒動作モデル
 * __mylib/__  ⇒共通機能
     * __\_\_init\_\_.py__　⇒パッケージ初期化
     * __error_ellipse.py__　⇒誤差楕円生成
